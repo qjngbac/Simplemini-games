@@ -1,0 +1,455 @@
+// WarioWare 式 microgame 合集 — 纯前端 Canvas 实现
+(function () {
+  "use strict";
+
+  // ---------- 画布 ----------
+  const cv = document.getElementById("cv");
+  const ctx = cv.getContext("2d");
+  let DPR = Math.min(window.devicePixelRatio || 1, 2);
+  let W = 0, H = 0;
+  function resize() {
+    W = window.innerWidth; H = window.innerHeight;
+    cv.width = Math.floor(W * DPR); cv.height = Math.floor(H * DPR);
+    cv.style.width = W + "px"; cv.style.height = H + "px";
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  window.addEventListener("resize", resize); resize();
+
+  // ---------- 工具 ----------
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const randi = (a, b) => Math.floor(rand(a, b + 1));
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+  const TAU = Math.PI * 2;
+
+  // ---------- 输入 ----------
+  const keys = {};
+  const pointer = { x: W / 2, y: H / 2, down: false };
+  window.addEventListener("keydown", e => {
+    const k = e.key.toLowerCase();
+    if (["arrowup","arrowdown","arrowleft","arrowright"," "].includes(k)) e.preventDefault();
+    keys[k] = true;
+    if (phase === "play" && current) {
+      if (k === " ") current.onInput({ type: "mash" });
+      else if (/^[0-9]$/.test(k)) current.onInput({ type: "key", k });
+    }
+  });
+  window.addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
+  cv.addEventListener("pointerdown", e => {
+    pointer.x = e.clientX; pointer.y = e.clientY; pointer.down = true;
+    if (phase === "play" && current) current.onInput({ type: "tap", x: e.clientX, y: e.clientY });
+  });
+  cv.addEventListener("pointermove", e => { pointer.x = e.clientX; pointer.y = e.clientY; });
+  window.addEventListener("pointerup", () => { pointer.down = false; });
+  window.addEventListener("pointercancel", () => { pointer.down = false; });
+
+  // 移动辅助：键盘或拖拽控制一个目标点
+  function moveToward(obj, speed, dt, radius) {
+    let dx = 0, dy = 0;
+    if (keys["a"] || keys["arrowleft"]) dx -= 1;
+    if (keys["d"] || keys["arrowright"]) dx += 1;
+    if (keys["w"] || keys["arrowup"]) dy -= 1;
+    if (keys["s"] || keys["arrowdown"]) dy += 1;
+    if (dx || dy) {
+      const l = Math.hypot(dx, dy); 
+      if (l > 0) {  // 优化：只有在有移动方向时才计算
+        obj.x += dx / l * speed * dt; 
+        obj.y += dy / l * speed * dt;
+      }
+    } else if (pointer.down) {
+      obj.x = clamp(pointer.x, radius, W - radius);
+      obj.y = clamp(pointer.y, radius, H - radius);
+    }
+    obj.x = clamp(obj.x, radius, W - radius);
+    obj.y = clamp(obj.y, radius, H - radius);
+  }
+
+  // ---------- 宿主向 microgame 提供的上下文 ----------
+  const gctx = {
+    win() { finish(true); },
+    lose() { finish(false); },
+  };
+
+  // ============================================================
+  //  Microgames（统一契约：init / update / render / onInput）
+  // ============================================================
+
+  // 1) 躲石头 —— 限时内存活即胜（timeoutWin=true）
+  function makeDodge(level) {
+    let px, py, pr = 18, rocks = [], acc = 0;
+    const diff = level;
+    // 代理对象只建一次；旧写法在 update 里每帧现造一个，白白制造 GC 压力
+    const self = { get x(){return px;}, set x(v){px=v;}, get y(){return py;}, set y(v){py=v;} };
+    return {
+      id: "dodge", prompt: "躲开石头！", timeoutWin: true,
+      init() { px = W / 2; py = H * 0.72; rocks = []; acc = 0; },
+      update(dt) {
+        moveToward(self, 320, dt, pr);
+        const rate = Math.max(0.18, 0.5 - diff * 0.03);
+        const v = 170 + diff * 16;
+        acc += dt;
+        while (acc >= rate) { acc -= rate; rocks.push({ x: rand(30, W - 30), y: -20, vy: v + rand(-30, 40), r: rand(14, 24) }); }
+        for (let i = rocks.length - 1; i >= 0; i--) {
+          const r = rocks[i]; r.y += r.vy * dt;
+          if (Math.hypot(r.x - px, r.y - py) < r.r + pr) { gctx.lose(); return; }
+          if (r.y > H + 30) rocks.splice(i, 1);
+        }
+      },
+      render() {
+        ctx.fillStyle = "#ffd86b"; ctx.font = "30px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText("😎", px, py);
+        for (const r of rocks) { ctx.font = (r.r * 1.6) + "px sans-serif"; ctx.fillText("☄️", r.x, r.y); }
+      },
+      onInput() {},
+    };
+  }
+
+  // 2) 点中目标
+  function makeTap() {
+    let tx, ty, tr = 46;
+    return {
+      id: "tap", prompt: "点中目标！", timeoutWin: false,
+      init() { tx = rand(W * 0.2, W * 0.8); ty = rand(H * 0.3, H * 0.7); tr = 46; },
+      update() {},
+      render() {
+        ctx.strokeStyle = "#ff8a5b"; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(tx, ty, tr, 0, TAU); ctx.stroke();
+        ctx.font = "40px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText("🎯", tx, ty);
+      },
+      onInput(ev) {
+        if (ev.type !== "tap") return;
+        if (Math.hypot(ev.x - tx, ev.y - ty) < tr) gctx.win(); else gctx.lose();
+      },
+    };
+  }
+
+  // 3) 数一数有几只猫
+  function makeCount(level) {
+    let cats = [], n = 0, opts = [], rects = [];
+    return {
+      id: "count", prompt: "数有几只猫？", timeoutWin: false,
+      init() {
+        n = randi(3, 6 + Math.min(level, 3));
+        cats = [];
+        // 拒绝采样保证猫之间留出最小间距，否则会叠在一起根本数不清
+        const minD = Math.max(46, Math.min(78, W / 7));
+        for (let i = 0; i < n; i++) {
+          let spot = null;
+          for (let tries = 0; tries < 260; tries++) {
+            const p = { x: rand(W * 0.12, W * 0.88), y: rand(H * 0.22, H * 0.5) };
+            let ok = true;
+            for (const c of cats) { if (Math.hypot(c.x - p.x, c.y - p.y) < minD) { ok = false; break; } }
+            if (!spot) spot = p;          // 兜底：至少保留第一个候选点
+            if (ok) { spot = p; break; }
+          }
+          cats.push(spot);
+        }
+        const max = n + 2;
+        opts = []; for (let i = 1; i <= max; i++) opts.push(i);
+        for (let i = opts.length - 1; i > 0; i--) { const j = randi(0, i); [opts[i], opts[j]] = [opts[j], opts[i]]; }
+        rects = [];
+        const bw = Math.min(64, (W - 40) / opts.length), gap = 10;
+        const total = opts.length * bw + (opts.length - 1) * gap;
+        let x0 = (W - total) / 2;
+        for (let i = 0; i < opts.length; i++) rects.push({ x: x0 + i * (bw + gap), y: H - 110, w: bw, h: 64, v: opts[i] });
+      },
+      update() {},
+      render() {
+        ctx.font = "40px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        for (const c of cats) ctx.fillText("🐱", c.x, c.y);
+        for (const r of rects) {
+          ctx.fillStyle = "#2a3150"; ctx.fillRect(r.x, r.y, r.w, r.h);
+          ctx.strokeStyle = "#8a5bff"; ctx.lineWidth = 2; ctx.strokeRect(r.x, r.y, r.w, r.h);
+          ctx.fillStyle = "#fff"; ctx.font = "26px sans-serif"; ctx.fillText(r.v, r.x + r.w / 2, r.y + r.h / 2);
+        }
+      },
+      onInput(ev) {
+        if (ev.type !== "tap") return;
+        for (const r of rects) {
+          if (ev.x >= r.x && ev.x <= r.x + r.w && ev.y >= r.y && ev.y <= r.y + r.h) {
+            if (r.v === n) gctx.win(); else gctx.lose(); return;
+          }
+        }
+      },
+    };
+  }
+
+  // 4) 狂按充能
+  function makeMash() {
+    let fill = 0;
+    return {
+      id: "mash", prompt: "狂按充能！", timeoutWin: false,
+      init() { fill = 0; },
+      update(dt) { fill = clamp(fill - 1.5 * dt, 0, 100); },
+      render() {
+        const bw = 220, bh = 34, x = (W - bw) / 2, y = H / 2 - 17;
+        ctx.fillStyle = "#1c2138"; ctx.fillRect(x, y, bw, bh);
+        ctx.fillStyle = "#5bff9b"; ctx.fillRect(x, y, bw * (fill / 100), bh);
+        ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.strokeRect(x, y, bw, bh);
+        ctx.fillStyle = "#fff"; ctx.font = "20px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText("💥 " + Math.floor(fill) + "%", W / 2, y - 28);
+        ctx.fillStyle = "#9aa6d6"; ctx.font = "13px sans-serif";
+        ctx.fillText("点击 / 空格 ×7 即可充满", W / 2, y + bh + 22);
+      },
+      onInput(ev) {
+        if (ev.type === "mash" || ev.type === "tap") {
+          fill = clamp(fill + 16, 0, 100);
+          if (fill >= 100) gctx.win(); // 胜利判定放在点击瞬间，避免被衰减压到 99%
+        }
+      },
+    };
+  }
+
+  // 5) 把角色拖到终点
+  function makeDrag() {
+    let hx, hy, gx, gy, gw, gh;
+    const self = { get x(){return hx;}, set x(v){hx=v;}, get y(){return hy;}, set y(v){hy=v;} };
+    return {
+      id: "drag", prompt: "拖到绿框里！", timeoutWin: false,
+      init() {
+        hx = W / 2; hy = H * 0.78;
+        gw = 120; gh = 90; gx = rand(W * 0.15, W * 0.85 - gw); gy = rand(H * 0.18, H * 0.4);
+      },
+      update(dt) {
+        moveToward(self, 360, dt, 18);
+        if (hx > gx && hx < gx + gw && hy > gy && hy < gy + gh) gctx.win();
+      },
+      render() {
+        ctx.fillStyle = "rgba(91,255,155,0.25)"; ctx.fillRect(gx, gy, gw, gh);
+        ctx.strokeStyle = "#5bff9b"; ctx.lineWidth = 3; ctx.strokeRect(gx, gy, gw, gh);
+        ctx.font = "34px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText("🧍", hx, hy);
+      },
+      onInput() {},
+    };
+  }
+
+  // 6) 用篮子接住下落的水果
+  function makeCatch(level) {
+    let bx, bw = 130, fruits = [], caught = 0, missed = 0, need = 3, acc = 0;
+    let spawnY, catchY;                 // 放到 init 里算，窗口 resize 后才跟得上
+    const diff = level;
+    const MAX_MISS = 3;                 // 允许漏 3 个，第 4 个判负
+    return {
+      id: "catch", prompt: "接住水果！", timeoutWin: false,
+      init() {
+        // 水果从屏幕中部生成，短距离下落，确保限时内能接满
+        spawnY = H * 0.22;
+        catchY = H - 70;
+        bx = W / 2; fruits = []; caught = 0; missed = 0; need = 3;
+        acc = 0.7; // 让首帧立即生成第一颗水果，避免前期空窗
+        // 预生成一颗居中的水果，玩家开打立刻有目标
+        fruits.push({ x: rand(W * 0.3, W * 0.7), y: spawnY, vy: 360 + diff * 8 });
+      },
+      update(dt) {
+        if (keys["a"] || keys["arrowleft"]) bx -= 480 * dt;
+        else if (keys["d"] || keys["arrowright"]) bx += 480 * dt;
+        else if (pointer.down) bx = clamp(pointer.x, bw / 2, W - bw / 2);
+        bx = clamp(bx, bw / 2, W - bw / 2);
+        // 更快的生成频率，保证限时内出够水果
+        const rate = Math.max(0.45, 0.68 - diff * 0.02);
+        acc += dt;
+        while (acc >= rate) { acc -= rate; fruits.push({ x: rand(40, W - 40), y: spawnY, vy: 360 + diff * 8 }); }
+        for (let i = fruits.length - 1; i >= 0; i--) {
+          const f = fruits[i]; f.y += f.vy * dt;
+          // 放宽接住判定带（含低帧率安全余量），且水平容差随篮宽增大
+          if (f.y >= catchY - 8 && f.y <= catchY + 40 && Math.abs(f.x - bx) < bw / 2 + 6) {
+            caught++; fruits.splice(i, 1);
+            if (caught >= need) { gctx.win(); return; }
+            continue;
+          }
+          if (f.y > H + 30) { missed++; fruits.splice(i, 1); if (missed > MAX_MISS) { gctx.lose(); return; } }
+        }
+      },
+      render() {
+        // 篮子高度参考线（视觉提示接住位置）
+        ctx.strokeStyle = "rgba(138,91,255,0.3)"; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+        ctx.beginPath(); ctx.moveTo(0, catchY); ctx.lineTo(W, catchY); ctx.stroke(); ctx.setLineDash([]);
+        for (const f of fruits) { ctx.font = "32px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("🍎", f.x, f.y); }
+        ctx.fillStyle = "#8a5bff"; ctx.fillRect(bx - bw / 2, catchY, bw, 18);
+        ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.strokeRect(bx - bw / 2, catchY, bw, 18);
+        ctx.fillStyle = "#fff"; ctx.font = "16px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(caught + " / " + need, W / 2, 30);
+        ctx.fillStyle = "#ff8a5b"; ctx.font = "13px sans-serif";
+        ctx.fillText("漏接 " + missed + "/" + MAX_MISS, W / 2, 52);
+      },
+      onInput() {},
+    };
+  }
+
+  const GAMES = [makeDodge, makeTap, makeCount, makeMash, makeDrag, makeCatch];
+  // 给每个工厂挂一个静态 gid。旧写法为了知道"这个工厂是哪个小游戏"，
+  // 会先 pick() 出一个完整的小游戏对象只为读一次 .id 再丢掉，
+  // do/while 每重试一次就白造一个对象。
+  GAMES.forEach((f, i) => { f.gid = "g" + i; });
+
+  // ============================================================
+  //  宿主状态机
+  // ============================================================
+  let phase = "menu"; // menu | prompt | play | result | over
+  let phaseT = 0;
+  let current = null, lastId = null;
+  let level = 1, lives = 4, combo = 0, score = 0;
+  let best = parseInt(localStorage.getItem("ww_best") || "0", 10) || 0;
+  let playTime = 0, timeLimit = 1, lastResult = null;
+
+  const PROMPT_T = 0.85, RESULT_T = 0.45;
+  const T = lv => Math.max(2.0, 5.0 - lv * 0.18); // 起始 4.82s，逐关缩短，最低 2s
+
+  function nextMicrogame() {
+    let pick;
+    do { pick = GAMES[randi(0, GAMES.length - 1)]; } while (GAMES.length > 1 && pick.gid === lastId);
+    current = pick(level);
+    lastId = pick.gid;
+    current.finished = false;
+    phase = "prompt"; phaseT = PROMPT_T;
+  }
+
+  function startPlay() {
+    current.init(gctx);
+    current.finished = false;
+    phase = "play"; playTime = 0; timeLimit = T(level);
+  }
+
+  function finish(win) {
+    if (!current || current.finished) return;
+    current.finished = true;
+    resolveRound(win);
+  }
+
+  function resolveRound(win) {
+    if (win) { combo++; score += 100 * combo; level++; if (combo > best) { best = combo; localStorage.setItem("ww_best", String(best)); } }
+    else { combo = 0; lives--; }
+    lastResult = win ? "win" : "lose";
+    if (lives <= 0) {
+      localStorage.setItem("ww_best", String(best));
+      phase = "over"; showOver();
+    } else {
+      phase = "result"; phaseT = RESULT_T;
+    }
+  }
+
+  function startGame() {
+    level = 1; lives = 4; combo = 0; score = 0; lastId = null;
+    document.getElementById("menu").classList.add("hidden");
+    document.getElementById("gameover").classList.add("hidden");
+    nextMicrogame();
+  }
+
+  function showOver() {
+    const el = document.getElementById("goStats");
+    el.innerHTML = `最高连胜 <b>${best}</b><br>本局得分 <b>${score}</b>`;
+    submitRun();          // 先把本局成绩写进 localStorage，再刷新展示
+    renderRecords();
+    document.getElementById("gameover").classList.remove("hidden");
+  }
+
+  // ---------- 本机战绩（localStorage） ----------
+  const REC_KEY = "ww_records";
+  function loadRec() {
+    try { return JSON.parse(localStorage.getItem(REC_KEY) || "{}") || {}; }
+    catch (e) { return {}; }
+  }
+  function submitRun() {
+    const r = loadRec();
+    r.runs = (r.runs || 0) + 1;
+    r.bestCombo = Math.max(r.bestCombo || 0, best);
+    r.bestScore = Math.max(r.bestScore || 0, score);
+    r.totalWins = (r.totalWins || 0) + combo;   // 本局实际连过的小游戏数
+    try { localStorage.setItem(REC_KEY, JSON.stringify(r)); } catch (e) {}
+    return r;
+  }
+  function recHTML(r) {
+    if (!r || !r.runs) return '<span class="empty">还没有战绩，先来一轮</span>';
+    return '<div class="rec best"><div class="rk">最高连胜</div><div class="rv">' + (r.bestCombo || 0) + '</div></div>' +
+           '<div class="rec"><div class="rk">最高得分</div><div class="rv">' + (r.bestScore || 0) + '</div></div>' +
+           '<div class="rec"><div class="rk">累计通关</div><div class="rv">' + (r.totalWins || 0) + '</div></div>' +
+           '<div class="rec"><div class="rk">局数</div><div class="rv">' + r.runs + '</div></div>';
+  }
+  function renderRecords() {
+    const html = recHTML(loadRec());
+    const a = document.getElementById("wwRecords");
+    const b = document.getElementById("wwRecordsOver");
+    if (a) a.innerHTML = html;
+    if (b) b.innerHTML = html;
+  }
+
+  // ---------- HUD ----------
+  const elLives = document.getElementById("lives");
+  const elCombo = document.getElementById("combo");
+  const elBest = document.getElementById("best");
+  const ringFg = document.getElementById("ringFg");
+  const RING_C = 2 * Math.PI * 44;
+  function updateHUD() {
+    elLives.textContent = "❤️".repeat(Math.max(0, lives)) + "🖤".repeat(Math.max(0, 4 - lives));
+    elCombo.textContent = "连胜 " + combo;
+    elBest.textContent = "最佳 " + best;
+  }
+
+  // ---------- 主循环 ----------
+  let last = performance.now();
+  function loop(now) {
+    let dt = (now - last) / 1000; last = now;
+    if (dt > 0.05) dt = 0.05;
+    tick(dt);
+    render();
+    requestAnimationFrame(loop);
+  }
+
+  function tick(dt) {
+    if (phase === "prompt") {
+      phaseT -= dt; if (phaseT <= 0) startPlay();
+    } else if (phase === "play") {
+      playTime += dt;
+      if (!current.finished) current.update(dt);
+      if (current.finished) return;
+      if (playTime >= timeLimit) finish(current.timeoutWin);
+    } else if (phase === "result") {
+      phaseT -= dt; if (phaseT <= 0) nextMicrogame();
+    }
+  }
+
+  function render() {
+    // 背景
+    ctx.fillStyle = "#12132a"; ctx.fillRect(0, 0, W, H);
+
+    if (phase === "play" && current) {
+      current.render(gctx);
+      const frac = clamp(1 - playTime / timeLimit, 0, 1);
+      
+      // 优化：只有在数值发生变化时才更新DOM元素
+      const newStrokeOffset = (RING_C * (1 - frac)).toFixed(1);
+      if (ringFg.style.strokeDashoffset !== newStrokeOffset) {
+        ringFg.style.strokeDashoffset = newStrokeOffset;
+      }
+      
+      const newStrokeColor = playTime > timeLimit - 1 ? "#ff5b6e" : "#ffd86b";
+      if (ringFg.style.stroke !== newStrokeColor) {
+        ringFg.style.stroke = newStrokeColor;
+      }
+    } else if (phase === "prompt" && current) {
+      ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.font = "bold " + Math.min(56, W * 0.12) + "px sans-serif";
+      ctx.fillText(current.prompt, W / 2, H / 2);
+      ctx.font = "18px sans-serif"; ctx.fillStyle = "#9aa6d6";
+      ctx.fillText("准备好了吗…", W / 2, H / 2 + 50);
+      ringFg.style.strokeDashoffset = "0";
+    } else if (phase === "result") {
+      ctx.fillStyle = lastResult === "win" ? "rgba(91,255,155,0.18)" : "rgba(255,91,110,0.18)";
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.font = "bold 44px sans-serif";
+      ctx.fillText(lastResult === "win" ? "过！" : "失败…", W / 2, H / 2);
+      ringFg.style.strokeDashoffset = "0";
+    } else {
+      ringFg.style.strokeDashoffset = "0";
+    }
+    updateHUD();
+  }
+
+  document.getElementById("startBtn").addEventListener("click", startGame);
+  document.getElementById("retryBtn").addEventListener("click", startGame);
+
+  renderRecords();
+  requestAnimationFrame(loop);
+})();

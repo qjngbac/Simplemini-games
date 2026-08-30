@@ -1,0 +1,92 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #4ec0ca;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+#wrap {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#game {
+  display: block;
+  background: #4ec0ca;
+  /* logical 400x600, scaled to fit while keeping aspect */
+  width: min(100vw, calc(100vh * 400 / 600));
+  height: min(calc(100vw * 600 / 400), 100vh);
+  box-shadow: 0 0 40px rgba(0,0,0,.25);
+  touch-action: none;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.screen {
+  display: none;
+  text-align: center;
+  color: #fff;
+  text-shadow: 0 2px 0 #00000055, 0 4px 8px #00000033;
+  pointer-events: auto;
+  padding: 24px 28px;
+  background: rgba(0,0,0,.28);
+  border-radius: 18px;
+  backdrop-filter: blur(2px);
+}
+.screen.shown { display: block; }
+
+h1 { font-size: 44px; letter-spacing: 2px; }
+h2 { font-size: 32px; margin-bottom: 8px; }
+
+.hint { font-size: 16px; opacity: .92; margin-top: 10px; }
+.best { font-size: 15px; margin-top: 14px; opacity: .9; }
+.score-line { font-size: 18px; margin: 10px 0 16px; }
+
+.btn {
+  margin-top: 16px;
+  padding: 12px 30px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  background: #f5a623;
+  border: none;
+  border-radius: 12px;
+  border-bottom: 4px solid #c47d00;
+  cursor: pointer;
+  transition: transform .05s;
+}
+.btn:active { transform: translateY(2px); border-bottom-width: 2px; }
+
+/* 历史战绩 */
+.records { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 6px 0 2px; }
+.records .rec {
+  background: rgba(0, 0, 0, 0.28); border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px; padding: 5px 11px; min-width: 62px;
+}
+.records .rec .rk { font-size: 10px; opacity: .8; font-weight: 700; }
+.records .rec .rv { font-size: 16px; font-weight: 900; }
+.records .rec.best .rv { color: #ffd86b; }
+.records .empty { font-size: 12px; opacity: .7; }
+
+.back-home {
+  display: inline-block; margin-top: 14px; font-size: 12px; color: #fff; opacity: .75;
+  text-decoration: none; border-bottom: 1px dashed rgba(255, 255, 255, .45); padding-bottom: 1px;
+}
+.back-home:hover { opacity: 1; }

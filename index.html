@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>游戏合集 · 本机战绩</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { min-height: 100%; }
+body {
+  background: radial-gradient(circle at 20% 0%, #1b2140, #0a0d18 60%);
+  color: #eef2ff;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  padding: 34px 18px 60px;
+}
+.wrap { max-width: 1000px; margin: 0 auto; }
+h1 { font-size: 30px; font-weight: 900; letter-spacing: 2px; text-align: center; }
+.sub { text-align: center; color: #94a3b8; font-size: 13px; margin: 8px 0 26px; line-height: 1.7; }
+.sub b { color: #facc15; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.card {
+  background: rgba(22, 27, 46, 0.86); border: 1px solid #2c3357; border-radius: 16px;
+  padding: 18px 18px 14px; display: flex; flex-direction: column;
+  transition: transform .15s, border-color .15s, box-shadow .15s;
+}
+.card:hover { transform: translateY(-4px); border-color: #6366f1; box-shadow: 0 10px 26px rgba(0,0,0,.4); }
+.head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.head .ico { font-size: 26px; }
+.head h2 { font-size: 17px; font-weight: 800; }
+.head .tag { margin-left: auto; font-size: 10px; color: #94a3b8; border: 1px solid #333b63;
+  padding: 2px 7px; border-radius: 10px; white-space: nowrap; }
+.desc { font-size: 12px; color: #94a3b8; line-height: 1.6; margin: 6px 0 12px; min-height: 34px; }
+.recs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.recs .rec {
+  background: rgba(30, 36, 62, 0.9); border: 1px solid #333b63; border-radius: 9px;
+  padding: 5px 9px; min-width: 66px; text-align: center;
+}
+.recs .rec .rk { font-size: 9px; color: #7e8bbf; font-weight: 700; }
+.recs .rec .rv { font-size: 14px; font-weight: 900; }
+.recs .rec.best .rv { color: #facc15; }
+.recs .empty { font-size: 11px; color: #64748b; }
+.play {
+  margin-top: auto; display: block; text-align: center; text-decoration: none;
+  padding: 10px 0; border-radius: 12px; font-weight: 800; font-size: 14px; color: #0f172a;
+  background: linear-gradient(90deg, #facc15, #f97316);
+}
+.play:hover { filter: brightness(1.08); }
+.foot { text-align: center; color: #64748b; font-size: 11px; margin-top: 26px; line-height: 1.8; }
+button.reset {
+  margin: 6px auto 0; display: block; padding: 7px 16px; font-size: 12px; font-weight: 700;
+  color: #fda4af; background: rgba(244, 63, 94, 0.14); border: 1px solid #f43f5e;
+  border-radius: 10px; cursor: pointer;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎮 本机游戏合集</h1>
+  <p class="sub">全部 7 款浏览器小游戏，战绩保存在<b>本机浏览器</b>（localStorage）里，换浏览器或清缓存会丢失。<br>进入任意游戏通关一次，回到这里就能看到最新成绩。</p>
+
+  <div class="grid" id="grid"></div>
+
+  <div class="foot">
+    数据来源：localStorage · 仅保存在这台设备上<br>
+    <button class="reset" id="wipeBtn">⚠️ 清空全部本机战绩</button>
+  </div>
+</div>
+
+<script>
+// ---------- 各游戏的战绩键与展示口径 ----------
+// 每个 key 都与对应游戏内部使用的 localStorage 键保持一致
+const GAMES = [
+  {
+    dir: "peglin", ico: "🔵", name: "Peglin · 弹珠肉鸽", tag: "肉鸽 · 40 层满配",
+    desc: "重力弹珠 + 牌库构筑。特殊钉逐关解锁，4 种各 10 颗，40 关满配。",
+    key: "peglin_records",
+    rows: r => [
+      ["最深层数", r.bestFloor, true],
+      ["最高金币", r.bestGold],
+      ["最多遗物", r.bestRelics],
+      ["解锁钉子", (r.bestPegs || 0) + "/40"],
+    ],
+  },
+  {
+    dir: "slay-the-spire-lite", ico: "🗡️", name: "杀戮尖塔 · 精简版", tag: "卡牌 · 6 层通关",
+    desc: "出牌耗能、叠甲反击、毒素蔓延，登顶尖塔之巅打倒 Boss。",
+    key: "sts_records",
+    rows: r => [
+      ["通关次数", r.wins, true],
+      ["最深到达", (r.bestFloor || 0) + "/6"],
+      ["最大牌组", r.bestDeck],
+      ["局数", r.runs],
+    ],
+  },
+  {
+    dir: "vampire-survivors", ico: "🧟", name: "吸血鬼幸存者", tag: "割草 · 计时",
+    desc: "移动躲避怪潮，武器自动攻击，升级三选一越滚越强。",
+    key: "vs_records",
+    rows: r => [
+      ["最长存活", fmtTime(r.bestTime), true],
+      ["最多击杀", r.bestKills],
+      ["最高等级", "Lv." + (r.bestLevel || 1)],
+      ["局数", r.runs],
+    ],
+  },
+  {
+    dir: "warioware", ico: "⚡", name: "WarioWare 微游戏", tag: "反应 · 5 秒一关",
+    desc: "六种 5 秒小游戏连轴转，反应越快连胜越长，命只有 4 条。",
+    key: "ww_records",
+    rows: r => [
+      ["最高连胜", r.bestCombo, true],
+      ["最高得分", r.bestScore],
+      ["累计通关", r.totalWins],
+      ["局数", r.runs],
+    ],
+  },
+  {
+    dir: "flappy-bird", ico: "🐤", name: "像素鸟", tag: "休闲 · 单指",
+    desc: "经典像素鸟，空格或点击拍翅，穿过一条又一条管道。",
+    key: "flappy_records",
+    rows: r => {
+      const top = r.top || [];
+      const out = [["局数", r.runs], ["累计管道", r.pipes]];
+      if (top.length) out.push(["第 1 名", top[0], true]);
+      if (top.length > 1) out.push(["第 2 名", top[1]]);
+      if (top.length > 2) out.push(["第 3 名", top[2]]);
+      return out;
+    },
+  },
+  {
+    dir: "wordle", ico: "🔤", name: "Wordle 猜词", tag: "益智 · 每日",
+    desc: "6 次机会猜 5 字母英文单词，绿黄灰提示字母位置。",
+    key: "wordle_stats",
+    rows: r => {
+      const d = r.dist || {};
+      const win = r.played ? Math.round((r.wins || 0) / r.played * 100) : 0;
+      return [
+        ["胜率", win + "%", win >= 50],
+        ["连胜", r.streak],
+        ["最长连胜", r.maxStreak],
+        ["已玩", r.played],
+      ];
+    },
+  },
+  {
+    dir: "baba-is-you", ico: "🐰", name: "Baba Is You", tag: "解谜 · 12 关",
+    desc: "推词块改写规则，让「BABA IS YOU」变成你想要的一切。",
+    key: "biy_records",
+    rows: r => [
+      ["已通关", (r.maxLevel || 0) + "/12", (r.maxLevel || 0) >= 12],
+      ["累计过关", r.clears],
+    ],
+  },
+];
+
+// 游戏入口的路径后缀。
+// 源码布局下是 <dir>/index.html；打包成单文件后变成同级的 <dir>.html，
+// build_single_file.py 会把下面这一行的值替换成 ".html"。
+const LINK_SUFFIX = "/index.html";
+
+function fmtTime(sec) {
+  sec = Math.floor(sec || 0);
+  return String(Math.floor(sec / 60)).padStart(2, "0") + ":" + String(sec % 60).padStart(2, "0");
+}
+function readRec(key) {
+  try { return JSON.parse(localStorage.getItem(key) || "null") || null; }
+  catch (e) { return null; }
+}
+function esc(v) {
+  return String(v == null ? "" : v).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+}
+
+function render() {
+  const grid = document.getElementById("grid");
+  grid.innerHTML = GAMES.map(g => {
+    const rec = readRec(g.key);
+    const rows = rec ? g.rows(rec) : [];
+    const has = rows.some(x => {
+      const v = x[1];
+      if (v == null) return false;
+      if (typeof v === "number") return v > 0;
+      return String(v).replace(/[^0-9]/g, "") !== "";
+    });
+    const recs = rows.length && has
+      ? rows.map(([k, v, best]) =>
+          '<div class="rec' + (best ? " best" : "") + '"><div class="rk">' + esc(k) +
+          '</div><div class="rv">' + esc(v) + '</div></div>').join("")
+      : '<span class="empty">还没有战绩</span>';
+    return (
+      '<div class="card">' +
+        '<div class="head"><span class="ico">' + g.ico + '</span><h2>' + esc(g.name) + '</h2>' +
+          '<span class="tag">' + esc(g.tag) + '</span></div>' +
+        '<div class="desc">' + esc(g.desc) + '</div>' +
+        '<div class="recs">' + recs + '</div>' +
+        '<a class="play" href="' + esc(g.dir) + LINK_SUFFIX + '">开始游戏 →</a>' +
+      '</div>'
+    );
+  }).join("");
+}
+
+document.getElementById("wipeBtn").addEventListener("click", () => {
+  if (!confirm("确定清空这 7 个游戏的全部本机战绩吗？此操作不可撤销。")) return;
+  GAMES.forEach(g => { try { localStorage.removeItem(g.key); } catch (e) {} });
+  // 顺带清掉旧版兼容键
+  ["flappy_best", "ww_best"].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+  render();
+});
+
+render();
+</script>
+</body>
+</html>

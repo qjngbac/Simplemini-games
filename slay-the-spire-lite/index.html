@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>杀戮尖塔 · 精简版 (Deluxe)</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="root">
+    <!-- 战斗场景 -->
+    <section id="battle" class="scene hidden">
+      <div class="topbar">
+        <div class="pinfo">
+          <div class="name">铁甲勇士 🛡️</div>
+          <div class="hpbar"><div id="php"></div><span id="ptext">75/75</span></div>
+          <div class="block" id="pblock">🛡️ 0</div>
+          <div id="gold" class="gold-badge">🪙 50</div>
+        </div>
+        <div class="meta">
+          <div>第 <span id="floor">1</span> 层 · <span id="nodename">战斗</span></div>
+          <div id="deckcount">牌堆 0 · 弃 0</div>
+          <div id="relicsBar" class="relics-bar"></div>
+        </div>
+      </div>
+
+      <div id="enemies" class="enemies"></div>
+
+      <!-- 药水与能量栏 -->
+      <div class="energy-row">
+        <div class="energy">⚡ <span id="energy">3</span>/<span id="maxenergy">3</span></div>
+        <div id="potionsBar" class="potions-bar"></div>
+        <button id="endTurn">结束回合</button>
+      </div>
+
+      <div class="statuses-row">
+        <div class="statuses" id="pstatus"></div>
+      </div>
+
+      <div id="hand" class="hand"></div>
+    </section>
+
+    <!-- 地图场景 -->
+    <section id="mapscene" class="scene hidden">
+      <h2>选择下一分支路线</h2>
+      <div id="map" class="map"></div>
+    </section>
+
+    <!-- 奖励场景 -->
+    <section id="reward" class="scene hidden">
+      <h2 id="rewardTitle">战斗胜利！获得战利品</h2>
+      <div id="rewardCards" class="reward-cards"></div>
+      <div class="reward-actions">
+        <button id="skipReward">跳过选牌</button>
+      </div>
+    </section>
+
+    <!-- 商店场景 -->
+    <section id="shop" class="scene hidden">
+      <h2>🧙 尖塔地精商人</h2>
+      <div class="shop-gold">当前持有金币: 🪙 <span id="shopGold">50</span></div>
+      <div id="shopContent" class="shop-grid"></div>
+      <button id="leaveShopBtn">离开商店</button>
+    </section>
+
+    <!-- 休息场景 -->
+    <section id="rest" class="scene hidden">
+      <h2>🔥 温暖篝火</h2>
+      <p>恢复 30% 生命值，或升级牌组中的一张卡牌。</p>
+      <div class="rest-actions">
+        <button id="restHeal">休息回血 (+30%)</button>
+        <button id="restUpgrade">升级卡牌</button>
+      </div>
+      <div id="upgradeList" class="upgrade-list"></div>
+    </section>
+
+    <!-- 开始 / 结束 -->
+    <section id="menu" class="scene">
+      <h1>杀戮尖塔 · 精简版</h1>
+      <div class="badge">牌库构筑 · 流派构筑 · 遗物加成</div>
+      <p class="sub">出牌耗能，叠甲反击，力量成长，毒素蔓延，登顶尖塔之巅！</p>
+      <div class="rules">
+        <p>🃏 <b>卡牌流派</b>：攻击牌（⚔️ 直伤 / 群体 / 中毒）与技能牌（🛡 格挡 / 抽牌 / 削弱）。</p>
+        <p>💪 <b>力量成长</b>：力量提升所有攻击伤害，喝力量药水或靠遗物堆起来！</p>
+        <p>🩸 <b>遗物与药水</b>：收集燃烧之血、奥利哈钢、金字塔，饮用生命药水与力量药水助战！</p>
+        <p>🧙 <b>商店与篝火</b>：在商人处购买核心卡牌、遗物与药水，在篝火处升级卡牌！</p>
+      </div>
+      <div id="stsRecords" class="records"></div>
+      <button id="startBtn">开始攀登</button>
+      <a class="back-home" href="../index.html">← 返回游戏列表</a>
+    </section>
+
+    <section id="gameover" class="scene hidden">
+      <h1 id="goTitle">你倒下了</h1>
+      <div id="goStats"></div>
+      <div id="stsRecordsOver" class="records"></div>
+      <button id="retryBtn">重新开始</button>
+      <a class="back-home" href="../index.html">← 返回游戏列表</a>
+    </section>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>

@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<script>
+/* file:// 下部分浏览器会禁用 localStorage，直接读写会抛 SecurityError 导致游戏白屏。
+   这里先探一次，不可用时退化成内存存储：游戏照常玩，只是战绩不落盘。 */
+(function () {
+  try { localStorage.setItem('__probe__', '1'); localStorage.removeItem('__probe__'); return; } catch (e) {}
+  var mem = {};
+  try {
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: function (k) { return Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null; },
+        setItem: function (k, v) { mem[k] = String(v); },
+        removeItem: function (k) { delete mem[k]; },
+        clear: function () { mem = {}; },
+        key: function (i) { var ks = Object.keys(mem); return i < ks.length ? ks[i] : null; },
+        get length() { return Object.keys(mem).length; }
+      }
+    });
+  } catch (e2) {}
+})();
+</script>
+
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Wordle 猜词</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --green: #6aaa64;
+  --yellow: #c9b458;
+  --gray: #787c7e;
+  --empty: #0000;
+  --border: #d3d6da;
+  --bg: #ffffff;
+  --txt: #1a1a1b;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--txt);
+  font-family: "Segoe UI", "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  overflow: hidden;
+}
+
+#app {
+  max-width: 500px;
+  margin: 0 auto;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 6px 12px;
+}
+
+header {
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+  padding: 6px 0 8px;
+}
+header h1 {
+  font-size: 30px;
+  letter-spacing: 6px;
+  font-weight: 800;
+}
+.stats-line {
+  font-size: 12px;
+  color: #555;
+  margin-top: 4px;
+}
+.stats-line b { color: var(--txt); }
+
+.message {
+  height: 26px;
+  margin: 6px 0 2px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+}
+.message.show span {
+  background: #1a1a1b;
+  padding: 5px 12px;
+  border-radius: 4px;
+}
+
+.board {
+  display: grid;
+  grid-template-rows: repeat(6, 1fr);
+  gap: 5px;
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: 330px;
+  margin: 6px auto;
+  aspect-ratio: 5 / 6;
+}
+.row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
+}
+.cell {
+  border: 2px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(20px, 7vw, 30px);
+  font-weight: 800;
+  text-transform: uppercase;
+  border-radius: 3px;
+  transition: transform .1s;
+}
+.cell.filled { border-color: #878a8c; }
+.cell.correct { background: var(--green); border-color: var(--green); color: #fff; }
+.cell.present { background: var(--yellow); border-color: var(--yellow); color: #fff; }
+.cell.absent  { background: var(--gray);  border-color: var(--gray);  color: #fff; }
+
+/* flip animation */
+.cell.flip { animation: flip .5s ease; }
+@keyframes flip {
+  0% { transform: rotateX(0); }
+  50% { transform: rotateX(90deg); }
+  100% { transform: rotateX(0); }
+}
+.row.shake { animation: shake .4s; }
+@keyframes shake {
+  0%,100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+.cell.pop { animation: pop .12s; }
+@keyframes pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
+/* colorblind: add symbols */
+.cb .cell.correct::after { content: "✓"; position: absolute; }
+.cb .cell.present::after { content: "~"; position: absolute; }
+
+.keyboard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  max-width: 500px;
+  margin: 4px auto 0;
+}
+.kb-row {
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+}
+.key {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 52px;
+  border-radius: 6px;
+  background: #d3d6da;
+  color: var(--txt);
+  font-size: 15px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: background .15s, transform .05s;
+  padding: 0 4px;
+}
+.key:active { transform: translateY(2px); }
+.key.wide { flex: 1.5 1 0; font-size: 12px; }
+.key.correct { background: var(--green); color: #fff; }
+.key.present { background: var(--yellow); color: #fff; }
+.key.absent  { background: #929597; color: #fff; }
+
+/* win bounce */
+.row.bounce .cell { animation: bounce .5s ease both; }
+.row.bounce .cell:nth-child(2){ animation-delay:.08s }
+.row.bounce .cell:nth-child(3){ animation-delay:.16s }
+.row.bounce .cell:nth-child(4){ animation-delay:.24s }
+.row.bounce .cell:nth-child(5){ animation-delay:.32s }
+@keyframes bounce {
+  0%{transform:translateY(0)} 30%{transform:translateY(-14px)} 60%{transform:translateY(4px)} 100%{transform:translateY(0)}
+}
+
+/* 猜测次数分布（本机战绩） */
+.dist { display: flex; flex-direction: column; gap: 3px; margin-top: 10px; width: min(360px, 88%); }
+.dist-row { display: flex; align-items: center; gap: 6px; height: 20px; }
+.dist-row .dk { flex: 0 0 46px; text-align: right; font-size: 11px; font-weight: 700; color: #6b7a90; }
+.dist-row .dbar { flex: 0 0 auto; min-width: 0; height: 15px; background: #3d4756; border-radius: 3px; }
+.dist-row.has .dbar { background: var(--green, #6aaa64); }
+.dist-row .dv { flex: 1; text-align: left; font-size: 12px; font-weight: 800; color: #d7dee8; }
+
+.back-home {
+  display: inline-block; margin-top: 14px; font-size: 12px; color: #7b8798;
+  text-decoration: none; border-bottom: 1px dashed #46525f; padding-bottom: 1px;
+}
+.back-home:hover { color: #d7dee8; }
+
+</style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>WORDLE</h1>
+      <div class="stats-line" id="stats-line">已玩 <b id="stat-played">0</b> · 胜率 <b id="stat-win">0%</b> · 连胜 <b id="stat-streak">0</b> · 最长 <b id="stat-maxstreak">0</b></div>
+      <div id="dist" class="dist"></div>
+    </header>
+
+    <div id="message" class="message"></div>
+
+    <div id="board" class="board"></div>
+
+    <div id="keyboard" class="keyboard"></div>
+    <a class="back-home" href="index.html">← 返回游戏列表</a>
+  </div>
+  <script>
+// Wordle 词库
+// ANSWERS: 答案池（常用 5 字母英文单词）
+// VALID: 合法猜测集合（含 ANSWERS）。猜词不在 VALID 内则视为非法，提示抖动。
+// 可自行扩充。
+
+const ANSWERS = [
+  "apple","beach","candy","dance","eagle","flame","grape","house","ivory","joker",
+  "knife","lemon","mango","nurse","ocean","piano","quiet","river","storm","tiger",
+  "ultra","vivid","water","youth","zebra","bread","cloud","dream","earth","fresh",
+  "green","happy","juice","light","music","night","olive","peach","queen","robot",
+  "smile","train","under","voice","wheel","world","yacht","actor","bench","crane",
+  "drift","empty","frost","ghost","heart","image","jolly","kneel","liver","magic",
+  "novel","organ","pilot","quilt","raven","shine","tower","unity","vapor","wheat",
+  "yield","baker","cabin","delta","ember","fable","giant","hover","input","jumbo",
+  "kayak","lunar","mound","noble","oasis","plumb","quack","ridge","solar","tense",
+  "urban","vague","whale","yodel","alarm","blink","chair","dough","elbow","flute",
+  "glove","honey","inner","jewel","knack","leash","mirth","nudge","opera","pride",
+  "quote","rifle","shrub","tweak","udder","vault","witch","yeast","amber","bloom",
+  "crisp","dwarf","equal","ferry","glide","harsh","ideal","joust","karma","lotus",
+  "motel","newer","onion","plain","quirk","rusty","spice","trace","unzip",
+  "woven","young","aroma","brick","chess","dingo","enjoy","fiber","grant","hatch",
+  "judge","laser","merge","north","order","plaza","quick","royal","swift",
+  "theme","until","vital","witty","zesty","aloft","blunt","chill","ditch","extra",
+  "fudge","guppy","haunt","ionic","jazzy","kiosk","lumpy","muddy","nifty","ozone",
+  "pixel","quash","rhino","stout","thump","vetch","wager","yummy","blaze"
+];
+
+const VALID = new Set(ANSWERS.concat([
+  // 额外合法词（非答案也允许输入）
+  "about","above","abuse","actor","adapt","admit","adopt","adult","after","again",
+  "agent","agree","ahead","alarm","album","alert","alike","alive","allow","alone",
+  "along","alter","among","anger","angle","angry","apart","apple","apply","arena",
+  "argue","arise","array","aside","asset","audio","audit","avoid","award","aware",
+  "badly","baker","bases","basic","basis","beach","began","begin","begun","being",
+  "below","bench","billy","birth","black","blame","blind","block","blood","board",
+  "boost","booth","bound","brain","brand","brass","brave","bread","break","breed",
+  "brick","brief","broad","brown","build","built","buyer","cabin","cable","calif",
+  "carry","catch","cause","chain","chair","chaos","charm","chart","chase","cheap",
+  "check","chest","chief","child","china","chose","civil","claim","class","clean",
+  "clear","click","clock","close","coach","coast","could","count","court","cover",
+  "craft","crash","cream","crime","cross","crowd","crown","curve","cycle","daily",
+  "dance","dated","dealt","death","debut","delay","depth","doing","doubt","dozen",
+  "draft","drama","drawn","dream","dress","drill","drink","drive","drove","dying",
+  "eager","early","earth","eight","elite","empty","enemy","enjoy","enter","entry",
+  "equal","error","event","every","exact","exist","extra","faith","false","fault",
+  "fiber","field","fifth","fifty","fight","final","first","fixed","flash","fleet",
+  "floor","fluid","focus","force","forth","forty","forum","found","frame","frank",
+  "fraud","fresh","front","fruit","fully","funny","ghost","giant","given","glass",
+  "globe","going","grace","grade","grand","grant","grass","great","green","gross",
+  "group","grown","guard","guess","guest","guide","happy","harry","heart","heavy",
+  "hence","henry","horse","hotel","house","human","ideal","image","index","inner",
+  "input","issue","japan","jimmy","joint","jones","judge","known","label","large",
+  "laser","later","laugh","layer","learn","lease","least","leave","legal","level",
+  "lewis","light","limit","links","lives","local","logic","loose","lower","lucky",
+  "lunch","lying","magic","major","maker","march","maria","match","maybe","mayor",
+  "meant","media","metal","might","minor","minus","mixed","model","money","month",
+  "moral","motor","mount","mouse","mouth","movie","music","needs","never","newly",
+  "night","noise","north","noted","novel","nurse","occur","ocean","offer","often",
+  "order","other","ought","paint","panel","paper","party","peace","peter","phase",
+  "phone","photo","piano","piece","pilot","pitch","place","plain","plane","plant",
+  "plate","point","pound","power","press","price","pride","prime","print","prior",
+  "prize","proof","proud","prove","queen","quick","quiet","quite","radio","raise",
+  "range","rapid","ratio","reach","ready","refer","right","rival","river","rough",
+  "round","route","royal","rural","scale","scene","scope","score","sense","serve",
+  "seven","shall","shape","share","sharp","sheet","shelf","shell","shift","shirt",
+  "shock","shoot","short","shown","sight","since","sixth","sixty","sized","skill",
+  "sleep","slide","small","smart","smile","smith","smoke","solid","solve","sorry",
+  "sound","south","space","spare","speak","speed","spend","spent","split","spoke",
+  "sport","staff","stage","stake","stand","start","state","steam","steel","stick",
+  "still","stock","stone","stood","store","storm","story","strip","stuck","study",
+  "stuff","style","sugar","suite","super","sweet","table","taken","taste","taxes",
+  "teach","teeth","terry","texas","thank","theft","their","theme","there","these",
+  "thick","thing","think","third","those","three","threw","throw","tight","times",
+  "tired","title","today","topic","total","touch","tough","tower","track","trade",
+  "train","treat","trend","trial","tried","tries","truck","truly","trust","truth",
+  "twice","under","undue","union","unity","until","upper","upset","urban","usage",
+  "usual","valid","value","video","virus","visit","vital","voice","waste","watch",
+  "water","wheel","where","which","while","white","whole","whose","woman","women",
+  "world","worry","worse","worst","worth","would","wound","write","wrong","wrote",
+  "yield","young","youth"
+]));
+
+</script>
+  <script>
+// Wordle 猜词 — 纯前端实现
+(function () {
+  "use strict";
+
+  const ROWS = 6, COLS = 5;
+
+  // ---- DOM ----
+  const boardEl = document.getElementById("board");
+  const kbEl = document.getElementById("keyboard");
+  const msgEl = document.getElementById("message");
+  const statPlayed = document.getElementById("stat-played");
+  const statWin = document.getElementById("stat-win");
+  const statStreak = document.getElementById("stat-streak");
+  const statMaxStreak = document.getElementById("stat-maxstreak");
+
+  // ---- 状态 ----
+  let answer, curRow, curCol, status; // status: 'playing'|'won'|'lost'
+  let revealing = false;                       // 翻牌动画期间锁输入
+  let keyStates = {}; // letter -> 'correct'|'present'|'absent'
+  let stats = loadStats();
+  
+  // 性能优化：缓存DOM查询结果
+  const cellCache = new Map();
+
+  // ---- 初始化棋盘与键盘 ----
+  function buildBoard() {
+    boardEl.innerHTML = "";
+    cellCache.clear(); // 清空缓存
+    for (let r = 0; r < ROWS; r++) {
+      const row = document.createElement("div");
+      row.className = "row";
+      row.dataset.row = r;
+      for (let c = 0; c < COLS; c++) {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        cell.dataset.row = r;
+        cell.dataset.col = c;
+        row.appendChild(cell);
+        
+        // 缓存单元格元素
+        cellCache.set(`${r},${c}`, cell);
+      }
+      boardEl.appendChild(row);
+    }
+  }
+
+  const KB_LAYOUT = [
+    ["q","w","e","r","t","y","u","i","o","p"],
+    ["a","s","d","f","g","h","j","k","l"],
+    ["enter","z","x","c","v","b","n","m","back"],
+  ];
+  function buildKeyboard() {
+    kbEl.innerHTML = "";
+    KB_LAYOUT.forEach((row) => {
+      const div = document.createElement("div");
+      div.className = "kb-row";
+      row.forEach((k) => {
+        const btn = document.createElement("button");
+        btn.className = "key" + ((k === "enter" || k === "back") ? " wide" : "");
+        btn.textContent = k === "back" ? "⌫" : k.toUpperCase();
+        btn.dataset.key = k;
+        btn.addEventListener("click", () => onKey(k));
+        div.appendChild(btn);
+      });
+      kbEl.appendChild(div);
+    });
+  }
+
+  // ---- 游戏控制 ----
+  function newGame() {
+    answer = ANSWERS[Math.floor(Math.random() * ANSWERS.length)].toLowerCase();
+    curRow = 0; curCol = 0; status = "playing";
+    keyStates = {};
+    revealing = false;
+    buildBoard();
+    refreshKeyboard();
+    renderStats();
+    hideMsg();
+  }
+
+  function onKey(k) {
+    // revealing 期间一律拒绝输入：翻牌动画要走约 1.3 秒，旧代码这段时间里
+    // status 仍是 playing，狂敲回车会把同一行重复提交、或把字母打进正在翻的格子
+    if (status !== "playing" || revealing) return;
+    if (k === "enter") return submit();
+    if (k === "back") return backspace();
+    if (/^[a-z]$/.test(k)) return type(k);
+  }
+
+  function type(ch) {
+    if (curCol >= COLS) return;
+    const cell = cellAt(curRow, curCol);
+    cell.textContent = ch;
+    cell.classList.add("filled", "pop");
+    setTimeout(() => cell.classList.remove("pop"), 120);
+    curCol++;
+  }
+
+  function backspace() {
+    if (curCol <= 0) return;
+    curCol--;
+    const cell = cellAt(curRow, curCol);
+    cell.textContent = "";
+    cell.classList.remove("filled");
+  }
+
+  function submit() {
+    if (curCol < COLS) { shakeRow(curRow); flashMsg("字母不够"); return; }
+    const guess = currentWord();
+    if (!VALID.has(guess)) {
+      shakeRow(curRow);
+      flashMsg("词库里没有这个词");
+      return;
+    }
+    const result = judge(guess, answer);
+    revealing = true;
+    animateReveal(curRow, guess, result, () => {
+      revealing = false;
+      applyKeyboard(guess, result);
+      if (guess === answer) {
+        status = "won";
+        bounceRow(curRow);
+        recordResult(true, curRow + 1);
+        flashMsg("漂亮！猜对了");
+      } else if (curRow >= ROWS - 1) {
+        status = "lost";
+        recordResult(false);
+        flashMsg("答案是 " + answer.toUpperCase());
+      } else {
+        curRow++; curCol = 0;
+      }
+    });
+  }
+
+  function currentWord() {
+    let w = "";
+    for (let c = 0; c < COLS; c++) w += cellAt(curRow, c).textContent.toLowerCase();
+    return w;
+  }
+
+  // 核心：先绿后黄，按剩余计数
+  function judge(guess, target) {
+    const res = new Array(COLS).fill("absent");
+    const remaining = {};
+    for (const ch of target) remaining[ch] = (remaining[ch] || 0) + 1;
+    // 1) 绿
+    for (let i = 0; i < COLS; i++) {
+      if (guess[i] === target[i]) {
+        res[i] = "correct";
+        remaining[guess[i]]--;
+      }
+    }
+    // 2) 黄（按剩余计数）
+    for (let i = 0; i < COLS; i++) {
+      if (res[i] === "correct") continue;
+      const ch = guess[i];
+      if (remaining[ch] > 0) {
+        res[i] = "present";
+        remaining[ch]--;
+      }
+    }
+    return res;
+  }
+
+  function applyKeyboard(guess, result) {
+    const order = { correct: 3, present: 2, absent: 1 };
+    for (let i = 0; i < COLS; i++) {
+      const ch = guess[i];
+      const want = result[i];
+      if (!keyStates[ch] || order[want] > order[keyStates[ch]]) {
+        keyStates[ch] = want;
+      }
+    }
+    refreshKeyboard();
+  }
+
+  function refreshKeyboard() {
+    document.querySelectorAll(".key").forEach((btn) => {
+      const k = btn.dataset.key;
+      btn.classList.remove("correct", "present", "absent");
+      if (keyStates[k]) btn.classList.add(keyStates[k]);
+    });
+  }
+
+  // ---- 动画 ----
+  function animateReveal(row, guess, result, done) {
+    for (let i = 0; i < COLS; i++) {
+      const cell = cellAt(row, i);
+      setTimeout(() => {
+        cell.classList.add("flip");
+        setTimeout(() => {
+          cell.classList.remove("filled");
+          cell.classList.add(result[i]);
+        }, 250);
+        if (i === COLS - 1) setTimeout(done, 280);
+      }, i * 250);
+    }
+  }
+  function shakeRow(r) {
+    const row = boardEl.querySelector('.row[data-row="' + r + '"]');
+    row.classList.add("shake");
+    setTimeout(() => row.classList.remove("shake"), 400);
+  }
+  function bounceRow(r) {
+    const row = boardEl.querySelector('.row[data-row="' + r + '"]');
+    row.classList.add("bounce");
+  }
+
+  // ---- 提示 ----
+  let msgTimer;
+  function flashMsg(t) {
+    msgEl.innerHTML = "<span>" + t + "</span>";
+    msgEl.classList.add("show");
+    clearTimeout(msgTimer);
+    msgTimer = setTimeout(hideMsg, 2200);
+  }
+  function hideMsg() { msgEl.classList.remove("show"); msgEl.innerHTML = ""; }
+
+  function cellAt(r, c) {
+    // 使用缓存的DOM元素，避免每次都进行DOM查询
+    return cellCache.get(`${r},${c}`);
+  }
+
+  // ---- 战绩 ----
+  function loadStats() {
+    try {
+      const s = JSON.parse(localStorage.getItem("wordle_stats") || "{}") || {};
+      return {
+        played: s.played || 0,
+        wins: s.wins || 0,
+        streak: s.streak || 0,
+        maxStreak: s.maxStreak || 0,
+        dist: s.dist || {},      // 猜测次数分布：g1..g6 + fail
+      };
+    } catch (e) { return { played: 0, wins: 0, streak: 0, maxStreak: 0, dist: {} }; }
+  }
+  function saveStats() {
+    localStorage.setItem("wordle_stats", JSON.stringify(stats));
+    renderStats();
+  }
+  function recordResult(win, rows) {
+    stats.played++;
+    stats.dist = stats.dist || {};
+    if (win) {
+      stats.wins++; stats.streak++; stats.maxStreak = Math.max(stats.maxStreak, stats.streak);
+      const k = "g" + rows;
+      stats.dist[k] = (stats.dist[k] || 0) + 1;
+    } else {
+      stats.streak = 0;
+      stats.dist.fail = (stats.dist.fail || 0) + 1;
+    }
+    saveStats();
+  }
+  // 猜测次数分布（本地战绩里最有信息量的一项）
+  function renderDist() {
+    const el = document.getElementById("dist");
+    if (!el) return;
+    const d = stats.dist || {};
+    const rows = [];
+    for (let i = 1; i <= ROWS; i++) rows.push(["第" + i + "次", d["g" + i] || 0]);
+    rows.push(["失败", d.fail || 0]);
+    const max = Math.max(1, ...rows.map(r => r[1]));
+    el.innerHTML = rows.map(([k, v]) =>
+      '<div class="dist-row' + (v ? " has" : "") + '">' +
+        '<span class="dk">' + k + '</span>' +
+        '<span class="dbar" style="width:' + Math.max(v ? 8 : 0, Math.round(v / max * 100)) + '%"></span>' +
+        '<span class="dv">' + v + '</span>' +
+      '</div>'
+    ).join("");
+  }
+  function renderStats() {
+    statPlayed.textContent = stats.played;
+    statWin.textContent = (stats.played ? Math.round(stats.wins / stats.played * 100) : 0) + "%";
+    statStreak.textContent = stats.streak;
+    // maxStreak 一直有记录，但原先没有任何地方展示它
+    if (statMaxStreak) statMaxStreak.textContent = stats.maxStreak || 0;
+    renderDist();
+  }
+
+  // ---- 输入：物理键盘 ----
+  window.addEventListener("keydown", function (e) {
+    const k = e.key.toLowerCase();
+    if (k === "enter") { onKey("enter"); }
+    else if (k === "backspace") { onKey("back"); }
+    else if (/^[a-z]$/.test(k)) { onKey(k); }
+  });
+
+  // 胜利/失败后点击棋盘重新开始
+  boardEl.addEventListener("click", function () {
+    if (status !== "playing") { flashMsg("新一局开始"); newGame(); }
+  });
+  kbEl.addEventListener("click", function (e) {
+    if (status !== "playing" && e.target.classList.contains("key")) { newGame(); }
+  });
+
+  // ---- 启动 ----
+  buildKeyboard();
+  newGame();
+})();
+
+</script>
+</body>
+</html>

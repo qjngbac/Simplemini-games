@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<script>
+/* file:// 下部分浏览器会禁用 localStorage，直接读写会抛 SecurityError 导致游戏白屏。
+   这里先探一次，不可用时退化成内存存储：游戏照常玩，只是战绩不落盘。 */
+(function () {
+  try { localStorage.setItem('__probe__', '1'); localStorage.removeItem('__probe__'); return; } catch (e) {}
+  var mem = {};
+  try {
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: function (k) { return Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null; },
+        setItem: function (k, v) { mem[k] = String(v); },
+        removeItem: function (k) { delete mem[k]; },
+        clear: function () { mem = {}; },
+        key: function (i) { var ks = Object.keys(mem); return i < ks.length ? ks[i] : null; },
+        get length() { return Object.keys(mem).length; }
+      }
+    });
+  } catch (e2) {}
+})();
+</script>
+
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>杀戮尖塔 · 精简版 (Deluxe)</title>
+  <style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #140e22; --panel: #201734; --panel2: #2d204a; --line: #48386c;
+  --txt: #f1ebff; --mut: #a395cf; --gold: #facc15; --hp: #f43f5e; --energy: #38bdf8;
+  --atk: #fb923c; --skl: #4ade80; --pwr: #c084fc; --status: #facc15;
+}
+html, body { height: 100%; background: var(--bg); color: var(--txt); font-family: "Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif; }
+#root { max-width: 800px; margin: 0 auto; min-height: 100%; display: flex; flex-direction: column; padding: 14px; }
+.scene { flex: 1; display: flex; flex-direction: column; }
+.hidden { display: none !important; }
+
+h1, h2 { text-align: center; margin: 8px 0 12px; letter-spacing: 1px; }
+h1 { font-size: 30px; font-weight: 900; color: #f8fafc; }
+h2 { font-size: 22px; font-weight: 800; }
+.badge { text-align: center; display: inline-block; margin: 0 auto 10px; background: linear-gradient(90deg, #ec4899, #8b5cf6); padding: 3px 14px; border-radius: 12px; font-size: 12px; font-weight: 700; width: fit-content; }
+.sub { text-align: center; color: var(--mut); margin-bottom: 14px; }
+.rules { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin-bottom: 20px; font-size: 13.5px; color: #cfc3ee; line-height: 1.9; }
+.rules b { color: var(--gold); }
+button { padding: 10px 24px; font-size: 15px; font-weight: 800; color: #0f172a;
+  background: linear-gradient(90deg, var(--gold), #fb923c); border: none; border-radius: 22px; cursor: pointer; transition: transform .1s, filter .1s; }
+button:hover { filter: brightness(1.1); transform: translateY(-2px); }
+button:active { transform: scale(0.97); }
+#startBtn, #retryBtn { display: block; margin: 14px auto 0; }
+#goStats { text-align: center; color: var(--mut); line-height: 1.9; margin: 8px 0; }
+#goStats b { color: var(--gold); }
+
+/* 顶栏 */
+.topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.pinfo { display: flex; align-items: center; gap: 10px; }
+.pinfo .name { font-weight: 800; font-size: 15px; color: #f8fafc; }
+.hpbar { position: relative; width: 160px; height: 16px; background: #3a1a22; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
+#php { position: absolute; inset: 0; width: 100%; background: linear-gradient(90deg,#f43f5e,#fb923c); transition: width .2s; }
+.hpbar span { position: absolute; inset: 0; text-align: center; font-size: 11px; line-height: 16px; font-weight: 800; text-shadow: 0 1px 2px #000; }
+.block { display: inline-block; font-size: 13px; font-weight: 700; color: var(--energy); }
+.gold-badge { background: rgba(250, 204, 21, 0.15); border: 1px solid var(--gold); color: var(--gold); padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 700; }
+.meta { text-align: right; font-size: 12px; color: var(--mut); line-height: 1.5; display: flex; flex-direction: column; align-items: flex-end; }
+.relics-bar { display: flex; gap: 4px; font-size: 16px; margin-top: 2px; }
+
+/* 敌人区 */
+.enemies { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin: 6px 0 12px; }
+.enemy { width: 155px; background: var(--panel); border: 2px solid var(--line); border-radius: 12px; padding: 10px; text-align: center; position: relative; transition: border-color .15s, transform .15s; }
+.enemy.target { border-color: var(--gold); transform: translateY(-4px); box-shadow: 0 6px 16px rgba(250, 204, 21, 0.25); }
+.enemy .ename { font-weight: 800; font-size: 14px; margin-bottom: 4px; }
+.enemy .ehp { position: relative; height: 13px; background: #3a1a22; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); margin-bottom: 4px; }
+.enemy .ehpfill { position: absolute; inset: 0; width: 100%; background: linear-gradient(90deg,#f43f5e,#fb923c); }
+.enemy .ehp span { position: absolute; inset: 0; text-align: center; font-size: 10px; line-height: 13px; font-weight: 800; text-shadow: 0 1px 1px #000; }
+.enemy .eblock { font-size: 12px; color: var(--energy); font-weight: 700; }
+.intent { font-size: 20px; margin: 4px 0; }
+.intent .val { font-size: 14px; font-weight: 800; color: var(--gold); vertical-align: middle; }
+.estatus { font-size: 11px; margin-top: 4px; min-height: 16px; color: var(--status); }
+
+/* 能量 & 药水行 */
+.energy-row { display: flex; align-items: center; gap: 14px; margin: 4px 0 6px; }
+.energy { font-size: 24px; font-weight: 900; color: var(--energy); }
+.potions-bar { display: flex; gap: 8px; }
+.potion-btn { width: 34px; height: 34px; border-radius: 50%; background: var(--panel2); border: 1.5px solid var(--line); font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.potion-btn:hover { border-color: var(--gold); transform: scale(1.1); }
+#endTurn { margin-left: auto; }
+.statuses-row { min-height: 20px; margin-bottom: 6px; }
+.statuses { font-size: 12px; color: var(--status); font-weight: 700; }
+
+/* 手牌 */
+.hand { display: flex; gap: 8px; overflow-x: auto; padding: 6px 2px 14px; min-height: 160px; }
+.card { flex: 0 0 auto; width: 115px; min-height: 145px; background: linear-gradient(160deg, #2a2050, #1d1638);
+  border: 2px solid var(--line); border-radius: 10px; padding: 8px; cursor: pointer; position: relative; user-select: none; transition: transform .15s, border-color .15s, box-shadow .15s; }
+.card:hover { transform: translateY(-8px); z-index: 10; box-shadow: 0 10px 20px rgba(0,0,0,0.6); }
+.card.playable { border-color: var(--gold); }
+.card.disabled { opacity: 0.45; }
+.card .cost { position: absolute; top: 4px; left: 4px; width: 22px; height: 22px; border-radius: 50%;
+  background: #3a2a60; color: var(--energy); font-weight: 800; font-size: 13px; text-align: center; line-height: 22px; border: 1px solid var(--energy); }
+.card .cname { margin: 2px 0 0 24px; font-size: 12.5px; font-weight: 800; line-height: 1.2; min-height: 28px; }
+.card .ctype { font-size: 9.5px; color: var(--mut); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+.card .cdesc { font-size: 11px; color: #cfc3ee; line-height: 1.35; }
+.card.t-attack { border-color: #7c2d12; } .card.t-attack.playable { border-color: var(--atk); }
+.card.t-skill { border-color: #14532d; } .card.t-skill.playable { border-color: var(--skl); }
+.card.t-power { border-color: #581c87; } .card.t-power.playable { border-color: var(--pwr); }
+
+/* 地图 */
+.map { flex: 1; display: flex; flex-direction: column-reverse; gap: 18px; align-items: center; padding: 12px 0; }
+.map-row { display: flex; gap: 20px; }
+.map-node { width: 54px; height: 54px; border-radius: 50%; background: var(--panel); border: 2px solid var(--line);
+  display: flex; align-items: center; justify-content: center; font-size: 22px; cursor: pointer; opacity: 0.45; transition: transform .15s, opacity .15s; }
+.map-node.reachable { opacity: 1; border-color: var(--gold); box-shadow: 0 0 14px rgba(250, 204, 21, 0.45); }
+.map-node.reachable:hover { transform: scale(1.15); }
+.map-node.done { opacity: 0.25; background: #140e22; }
+.map-node.cur { border-color: var(--energy); }
+
+/* 奖励 */
+.reward-cards { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin: 16px 0; }
+.reward-actions { text-align: center; margin-top: 14px; }
+
+/* 商店 */
+.shop-gold { text-align: center; font-size: 16px; font-weight: 800; color: var(--gold); margin-bottom: 12px; }
+.shop-grid { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; max-width: 680px; margin: 0 auto 16px; }
+.shop-item { background: var(--panel); border: 2px solid var(--line); border-radius: 12px; padding: 12px; width: 180px; text-align: center; cursor: pointer; transition: transform .15s, border-color .15s; }
+.shop-item:hover { border-color: var(--gold); transform: translateY(-4px); }
+.shop-item .s-name { font-weight: 800; font-size: 14px; margin: 4px 0; }
+.shop-item .s-desc { font-size: 11px; color: var(--mut); min-height: 32px; }
+.shop-item .s-price { font-weight: 800; color: var(--gold); margin-top: 6px; font-size: 13px; }
+
+/* 休息 */
+.rest-actions { display: flex; gap: 14px; justify-content: center; margin: 14px 0; }
+.upgrade-list { display: flex; flex-direction: column; gap: 8px; max-width: 440px; margin: 10px auto; }
+.upgrade-item { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+.upgrade-item:hover { border-color: var(--gold); }
+.upgrade-item .uname { font-weight: 700; }
+.upgrade-item .udesc { font-size: 12px; color: var(--mut); }
+
+/* 状态标签 */
+.tag { display: inline-block; background: rgba(250, 204, 21, 0.15); border: 1px solid var(--status); color: var(--status);
+  border-radius: 10px; padding: 2px 7px; font-size: 11px; margin: 0 3px; font-weight: 700; }
+
+/* 历史战绩 */
+.records { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 16px 0; }
+.records .rec {
+  background: var(--panel, rgba(30, 34, 58, 0.8)); border: 1px solid var(--line, #3a3f66);
+  border-radius: 10px; padding: 7px 14px; min-width: 78px; text-align: center;
+}
+.records .rec .rk { font-size: 10px; color: var(--mut, #9aa6d6); font-weight: 700; }
+.records .rec .rv { font-size: 16px; font-weight: 900; color: #f4f4f8; }
+.records .rec.best .rv { color: var(--gold, #ffd86b); }
+.records .empty { font-size: 12px; color: var(--mut, #9aa6d6); }
+
+.back-home {
+  display: inline-block; margin-top: 16px; font-size: 12px; color: var(--mut, #9aa6d6);
+  text-decoration: none; border-bottom: 1px dashed var(--line, #3a3f66); padding-bottom: 1px;
+}
+.back-home:hover { color: #f4f4f8; }
+
+
+</style>
+</head>
+<body>
+  <div id="root">
+    <!-- 战斗场景 -->
+    <section id="battle" class="scene hidden">
+      <div class="topbar">
+        <div class="pinfo">
+          <div class="name">铁甲勇士 🛡️</div>
+          <div class="hpbar"><div id="php"></div><span id="ptext">75/75</span></div>
+          <div class="block" id="pblock">🛡️ 0</div>
+          <div id="gold" class="gold-badge">🪙 50</div>
+        </div>
+        <div class="meta">
+          <div>第 <span id="floor">1</span> 层 · <span id="nodename">战斗</span></div>
+          <div id="deckcount">牌堆 0 · 弃 0</div>
+          <div id="relicsBar" class="relics-bar"></div>
+        </div>
+      </div>
+
+      <div id="enemies" class="enemies"></div>
+
+      <!-- 药水与能量栏 -->
+      <div class="energy-row">
+        <div class="energy">⚡ <span id="energy">3</span>/<span id="maxenergy">3</span></div>
+        <div id="potionsBar" class="potions-bar"></div>
+        <button id="endTurn">结束回合</button>
+      </div>
+
+      <div class="statuses-row">
+        <div class="statuses" id="pstatus"></div>
+      </div>
+
+      <div id="hand" class="hand"></div>
+    </section>
+
+    <!-- 地图场景 -->
+    <section id="mapscene" class="scene hidden">
+      <h2>选择下一分支路线</h2>
+      <div id="map" class="map"></div>
+    </section>
+
+    <!-- 奖励场景 -->
+    <section id="reward" class="scene hidden">
+      <h2 id="rewardTitle">战斗胜利！获得战利品</h2>
+      <div id="rewardCards" class="reward-cards"></div>
+      <div class="reward-actions">
+        <button id="skipReward">跳过选牌</button>
+      </div>
+    </section>
+
+    <!-- 商店场景 -->
+    <section id="shop" class="scene hidden">
+      <h2>🧙 尖塔地精商人</h2>
+      <div class="shop-gold">当前持有金币: 🪙 <span id="shopGold">50</span></div>
+      <div id="shopContent" class="shop-grid"></div>
+      <button id="leaveShopBtn">离开商店</button>
+    </section>
+
+    <!-- 休息场景 -->
+    <section id="rest" class="scene hidden">
+      <h2>🔥 温暖篝火</h2>
+      <p>恢复 30% 生命值，或升级牌组中的一张卡牌。</p>
+      <div class="rest-actions">
+        <button id="restHeal">休息回血 (+30%)</button>
+        <button id="restUpgrade">升级卡牌</button>
+      </div>
+      <div id="upgradeList" class="upgrade-list"></div>
+    </section>
+
+    <!-- 开始 / 结束 -->
+    <section id="menu" class="scene">
+      <h1>杀戮尖塔 · 精简版</h1>
+      <div class="badge">牌库构筑 · 流派构筑 · 遗物加成</div>
+      <p class="sub">出牌耗能，叠甲反击，力量成长，毒素蔓延，登顶尖塔之巅！</p>
+      <div class="rules">
+        <p>🃏 <b>卡牌流派</b>：攻击牌（⚔️ 直伤 / 群体 / 中毒）与技能牌（🛡 格挡 / 抽牌 / 削弱）。</p>
+        <p>💪 <b>力量成长</b>：力量提升所有攻击伤害，喝力量药水或靠遗物堆起来！</p>
+        <p>🩸 <b>遗物与药水</b>：收集燃烧之血、奥利哈钢、金字塔，饮用生命药水与力量药水助战！</p>
+        <p>🧙 <b>商店与篝火</b>：在商人处购买核心卡牌、遗物与药水，在篝火处升级卡牌！</p>
+      </div>
+      <div id="stsRecords" class="records"></div>
+      <button id="startBtn">开始攀登</button>
+      <a class="back-home" href="index.html">← 返回游戏列表</a>
+    </section>
+
+    <section id="gameover" class="scene hidden">
+      <h1 id="goTitle">你倒下了</h1>
+      <div id="goStats"></div>
+      <div id="stsRecordsOver" class="records"></div>
+      <button id="retryBtn">重新开始</button>
+      <a class="back-home" href="index.html">← 返回游戏列表</a>
+    </section>
+  </div>
+
+  <script>
+// 杀戮尖塔 · 简化版 — 纯前端 DOM+JS 实现
+(function () {
+  "use strict";
+
+  // ---------- 卡牌定义（数据驱动） ----------
+  // 卡牌 effect 返回 false 表示打出失败(如需目标但未选)
+  const CARD_DEFS = {
+    strike: { name: "打击", cost: 1, type: "attack", desc: "造成 6 点伤害。",
+      effect: (g) => { if (!g.targetEnemy()) return false; g.dealDamage(g.target, 6 + 3 * up("strike")); return true; } },
+    defend: { name: "防御", cost: 1, type: "skill", desc: "获得 5 点格挡。",
+      effect: (g) => { g.player.block += 5 + 3 * up("defend"); return true; } },
+    bash: { name: "猛击", cost: 2, type: "attack", desc: "造成 8 伤害并施加 2 层易伤。",
+      effect: (g) => { if (!g.targetEnemy()) return false; const m = up("bash") ? 10 : 8; g.dealDamage(g.target, m); g.addStatus(g.target, "vuln", 2); return true; } },
+    cleave: { name: "横劈", cost: 1, type: "attack", desc: "对所有敌人造成 7 伤害。",
+      effect: (g) => { const d = 7 + 3 * up("cleave"); for (const e of g.enemies) if (!e.dead) g.dealDamage(e, d); return true; } },
+    poison_stab: { name: "毒刺", cost: 1, type: "attack", desc: "造成 4 伤害，施加 3 中毒。",
+      effect: (g) => { if (!g.targetEnemy()) return false; g.dealDamage(g.target, 4 + 2 * up("poison_stab")); g.addStatus(g.target, "poison", 3); return true; } },
+    pummel: { name: "连击", cost: 1, type: "attack", desc: "造成 3 伤害 2 次。",
+      effect: (g) => { if (!g.targetEnemy()) return false; const t = g.target; const d = 3 + up("pummel"); g.dealDamage(t, d); if (!t.dead) g.dealDamage(t, d); return true; } },
+    iron_wave: { name: "铁浪", cost: 1, type: "attack", desc: "造成 5 伤害，获得 5 格挡。",
+      effect: (g) => { if (!g.targetEnemy()) return false; const k = up("iron_wave"); g.dealDamage(g.target, 5 + 2 * k); g.player.block += 5 + 2 * k; return true; } },
+    shrug: { name: "耸肩", cost: 1, type: "skill", desc: "获得 8 格挡，抽 1 张牌。",
+      effect: (g) => { const k = up("shrug"); g.player.block += 8 + 2 * k; g.drawCards(1 + k); return true; } },
+    anger: { name: "愤怒", cost: 0, type: "attack", desc: "造成 6 伤害。将一张愤怒放入弃牌堆。",
+      effect: (g) => { if (!g.targetEnemy()) return false; g.dealDamage(g.target, 6 + 3 * up("anger")); g.discard.push({ id: "anger", uid: uid() }); return true; } },
+    flame_barrier: { name: "烈焰屏障", cost: 2, type: "skill", desc: "获得 12 格挡。",
+      effect: (g) => { g.player.block += 12 + 4 * up("flame_barrier"); return true; } },
+    heavy_blade: { name: "重刃", cost: 2, type: "attack", desc: "造成 14 伤害。",
+      effect: (g) => { if (!g.targetEnemy()) return false; g.dealDamage(g.target, 14 + 6 * up("heavy_blade")); return true; } },
+    weakness: { name: "衰弱", cost: 1, type: "skill", desc: "所有敌人施加 2 层虚弱。",
+      effect: (g) => { for (const e of g.enemies) if (!e.dead) g.addStatus(e, "weak", 2 + up("weakness")); return true; } },
+  };
+
+  // ---------- 初始牌组 ----------
+  const STARTER_DECK = ["strike","strike","strike","strike","strike","defend","defend","defend","defend","bash"];
+  const REWARD_POOL = ["strike","defend","bash","cleave","poison_stab","pummel","iron_wave","shrug","anger","flame_barrier","heavy_blade","weakness"];
+
+  // ---------- 敌人模板 ----------
+  const ENEMY_DEFS = [
+    { id: "slime", name: "史莱姆", hp: [22, 28], intents: [{ t: "atk", v: 8 }, { t: "atk", v: 8 }, { t: "block", v: 6 }] },
+    { id: "bat", name: "蝙蝠", hp: [18, 24], intents: [{ t: "atk", v: 6 }, { t: "weak", v: 1 }, { t: "atk", v: 6 }] },
+    { id: "goblin", name: "哥布林", hp: [26, 32], intents: [{ t: "atk", v: 10 }, { t: "block", v: 5 }, { t: "atk", v: 6 }] },
+    { id: "skeleton", name: "骷髅", hp: [24, 30], intents: [{ t: "atk", v: 7 }, { t: "atk", v: 7 }, { t: "poison", v: 2 }] },
+    { id: "elite_knight", name: "精英·重甲兵", hp: [42, 50], intents: [{ t: "atk", v: 12 }, { t: "block", v: 8 }, { t: "atk", v: 9 }, { t: "atk", v: 14 }] },
+    { id: "boss_wyrm", name: "Boss·巨蠕虫", hp: [70, 80], intents: [{ t: "atk", v: 11 }, { t: "atk", v: 11 }, { t: "vuln", v: 2 }, { t: "atk", v: 16 }] },
+  ];
+
+  // ---------- 地图节点 ----------
+    const NODE_TYPES = [
+      { t: "combat", icon: "⚔️", name: "战斗" },
+      { t: "elite", icon: "💀", name: "精英" },
+      { t: "rest", icon: "🔥", name: "篝火" },
+      { t: "reward", icon: "🎁", name: "宝箱" },
+      { t: "shop", icon: "🧙", name: "商店" },
+    ];
+
+  // ---------- 遗物定义 ----------
+  // 这两个常量原先被下方 renderRelics / renderPotions / renderShop 引用却从未定义，
+  // 一进入战斗就会抛 ReferenceError 打断整局渲染。
+  const RELIC_DEFS = {
+    burning_blood: {
+      id: "burning_blood", name: "燃烧之血", desc: "战斗胜利后回复 6 点生命",
+      onWin: (g) => { g.player.hp = Math.min(g.player.maxHp, g.player.hp + 6); },
+    },
+    orichalcum: {
+      id: "orichalcum", name: "奥利哈钢", desc: "回合结束时若没有格挡，获得 6 点格挡",
+      effect: (g) => { if ((g.player.block || 0) <= 0) g.player.block = (g.player.block || 0) + 6; },
+    },
+    runic_pyramid: {
+      id: "runic_pyramid", name: "金字塔", desc: "每场战斗开始时额外抽 1 张牌",
+      onBattleStart: (g) => { g.drawCards(1); },
+    },
+  };
+
+  // ---------- 药水定义 ----------
+  const POTION_DEFS = {
+    heal_potion: {
+      id: "heal_potion", name: "生命药水", cost: 40, desc: "恢复 20 点生命",
+      effect: (g) => { g.player.hp = Math.min(g.player.maxHp, g.player.hp + 20); },
+    },
+    strength_potion: {
+      id: "strength_potion", name: "力量药水", cost: 50, desc: "本场战斗力量 +2（攻击伤害 +2）",
+      effect: (g) => { g.player.strength = (g.player.strength || 0) + 2; },
+    },
+  };
+
+  // ---------- 工具 ----------
+  const uid = () => Math.random().toString(36).slice(2, 9);
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const randi = (a, b) => Math.floor(rand(a, b + 1));
+  const pick = (arr) => arr[randi(0, arr.length - 1)];
+  
+  // 性能优化：使用 Fisher-Yates 算法的改进版本，减少交换次数
+  const shuffle = (arr) => {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  };
+
+  // ---------- 游戏状态 ----------
+  const game = {
+    player: { hp: 60, maxHp: 60, block: 0, energy: 3, maxEnergy: 3, statuses: {} },
+    deck: [], draw: [], discard: [], hand: [],
+    relics: [], potions: [],
+    enemies: [], target: null,
+    map: [], mapRow: 0, mapCol: 0, floor: 1,
+    state: "menu",
+    cur: { upgraded: {} }, // 升级记录
+  };
+  const G = game;
+
+  // 升级等级读取助手：未升级的卡返回 0，避免 undefined*N = NaN
+  const up = (id) => (G.cur.upgraded[id] || 0);
+
+  // 把战斗辅助函数挂到 G 上，供卡牌 effect 以 g.xxx() 形式调用
+  // （否则 g.targetEnemy / g.dealDamage 等都是 undefined，会抛 TypeError 导致点击无反应）
+  G.targetEnemy = targetEnemy;
+  G.dealDamage = dealDamage;
+  G.addStatus = addStatus;
+  G.drawCards = drawCards;
+
+  // ---------- 战斗上下文辅助 ----------
+  function targetEnemy() {
+    if (!G.target || G.target.dead) {
+      const alive = G.enemies.filter(e => !e.dead);
+      if (alive.length === 0) return false;
+      G.target = alive[0];
+    }
+    return true;
+  }
+  function dealDamage(t, base) {
+    let dmg = base + (G.player.strength || 0);
+    if (G.player.statuses.weak) dmg = Math.floor(dmg * 0.75);
+    if (t.statuses.vuln) dmg = Math.floor(dmg * 1.5);
+    // 格挡抵消伤害
+    const blocked = Math.min(t.block || 0, dmg);
+    const real = dmg - blocked;
+    t.block = (t.block || 0) - blocked;
+    t.hp -= real;
+    flash(t);
+    if (t.hp <= 0) { t.dead = true; t.hp = 0; }
+  }
+  function addStatus(t, key, n) { t.statuses[key] = (t.statuses[key] || 0) + n; }
+  function drawCards(n) {
+    for (let i = 0; i < n; i++) {
+      if (G.draw.length === 0) { 
+        // 性能优化：直接转移数组引用，避免创建新数组和拷贝操作
+        G.draw = G.discard;
+        G.discard = [];
+        if (G.draw.length === 0) return;
+        shuffle(G.draw);
+      }
+      G.hand.push(G.draw.shift());
+    }
+  }
+  function discardHand() { for (const c of G.hand) G.discard.push(c); G.hand = []; }
+
+  // ---------- 闪烁 ----------
+  function flash(t) { t._flash = 8; }
+
+  // ---------- 敌人意图 ----------
+  function chooseIntent(e) {
+    const def = ENEMY_DEFS.find(d => d.id === e.defId);
+    e.intentIdx = (e.intentIdx + 1) % def.intents.length;
+    e.intent = def.intents[e.intentIdx];
+  }
+  function intentText(intent) {
+    if (intent.t === "atk") return `⚔️ <span class="val">${intent.v}</span>`;
+    if (intent.t === "block") return `🛡️ <span class="val">${intent.v}</span>`;
+    if (intent.t === "weak") return `💧 <span class="val">${intent.v}</span>`;
+    if (intent.t === "poison") return `☠️ <span class="val">${intent.v}</span>`;
+    if (intent.t === "vuln") return `🔻 <span class="val">${intent.v}</span>`;
+    return "?";
+  }
+
+  // ---------- 敌人行动 ----------
+  function enemyAct(e) {
+    if (e.dead) return;
+    const it = e.intent;
+    if (it.t === "atk") {
+      let dmg = it.v;
+      if (e.statuses.weak) dmg = Math.floor(dmg * 0.75);
+      if (G.player.statuses.vuln) dmg = Math.floor(dmg * 1.5);
+      const blocked = Math.min(G.player.block, dmg);
+      G.player.block -= blocked;
+      const real = dmg - blocked;
+      G.player.hp -= real;
+      flash(G.player);
+    } else if (it.t === "block") { e.block = (e.block || 0) + it.v; }
+      else if (it.t === "weak") { addStatus(G.player, "weak", it.v); }
+      else if (it.t === "poison") { addStatus(G.player, "poison", it.v); }
+      else if (it.t === "vuln") { addStatus(G.player, "vuln", it.v); }
+    chooseIntent(e);
+  }
+
+  // ---------- 状态结算 ----------
+  function settleStatuses(t) {
+    // 中毒：扣 stacks 血，然后 -1
+    if (t.statuses.poison) { 
+      const p = t.statuses.poison; 
+      t.hp -= p; 
+      flash(t); 
+      if (t.hp <= 0) { 
+        t.hp = 0; 
+        if (t !== G.player) t.dead = true; 
+      }
+      // 性能优化：只有在数值大于0时才进行递减操作
+      if (p > 0) t.statuses.poison -= 1;
+    }
+  }
+  function tickDown(t) {
+    for (const k in t.statuses) { if (t.statuses[k] > 0) t.statuses[k] -= 1; if (t.statuses[k] <= 0) delete t.statuses[k]; }
+  }
+
+  // ---------- 回合 ----------
+  function turnStart() {
+    G.player.block = 0;
+    for (const e of G.enemies) e.block = 0;
+    G.player.energy = G.player.maxEnergy;
+    drawCards(5);
+    renderBattle();
+  }
+  function endTurn() {
+    if (G.state !== "battle") return;
+    // 玩家弃手牌
+    discardHand();
+    renderBattle();
+    // 遗物：回合结束触发的效果
+    for (const id of G.relics) {
+      const rel = RELIC_DEFS[id];
+      if (rel && rel.effect) rel.effect(G);
+    }
+    // 敌人按意图行动
+    for (const e of G.enemies) enemyAct(e);
+    // 玩家死亡？
+    if (G.player.hp <= 0) { G.player.hp = 0; return gameOver(false); }
+    // 状态结算（双方中毒）——中毒可能在此击杀玩家
+    settleStatuses(G.player);
+    for (const e of G.enemies) settleStatuses(e);
+    if (G.player.hp <= 0) { G.player.hp = 0; return gameOver(false); }
+    // 状态递减
+    tickDown(G.player);
+    for (const e of G.enemies) tickDown(e);
+    // 敌人全死？
+    if (G.enemies.every(e => e.dead)) { return battleWin(); }
+    renderBattle();
+    // 下一回合（短暂延迟让玩家看清敌人动作后重置并抽牌）
+    setTimeout(() => { turnStart(); }, 350);
+  }
+
+  // ---------- 战斗 ----------
+  function startBattle(nodeType) {
+    G.enemies = [];
+    let pool;
+    if (nodeType === "elite") pool = ENEMY_DEFS.filter(e => e.id === "elite_knight");
+    else if (nodeType === "boss") pool = ENEMY_DEFS.filter(e => e.id === "boss_wyrm");
+    else pool = ENEMY_DEFS.filter(e => !e.id.startsWith("elite") && !e.id.startsWith("boss"));
+    const count = nodeType === "boss" ? 1 : (nodeType === "elite" ? 1 : randi(1, 2));
+    for (let i = 0; i < count; i++) {
+      const def = pick(pool);
+      G.enemies.push({ defId: def.id, name: def.name, hp: randi(def.hp[0], def.hp[1]),
+        maxHp: 0, block: 0, statuses: {}, intentIdx: -1, dead: false, _flash: 0 });
+    }
+    for (const e of G.enemies) { e.maxHp = e.hp; chooseIntent(e); }
+    G.target = G.enemies[0];
+    G.player.block = 0; G.player.statuses = {};
+    G.player.strength = 0;                     // 力量药水只作用于本场战斗
+    G.draw = shuffle(G.deck.map(c => ({ id: c.id, uid: uid() })));
+    G.discard = []; G.hand = [];
+    G.state = "battle";
+    const nameEl = document.getElementById("nodename");
+    if (nameEl) nameEl.textContent = nodeType === "boss" ? "Boss" : nodeType === "elite" ? "精英" : "战斗";
+    show("battle");
+    turnStart();
+    // 遗物：战斗开始触发的效果（在首轮抽牌之后）
+    for (const id of G.relics) {
+      const rel = RELIC_DEFS[id];
+      if (rel && rel.onBattleStart) rel.onBattleStart(G);
+    }
+    renderBattle();
+  }
+
+  function battleWin() {
+    // 战斗奖励：金币 + 遗物胜利效果
+    G.player.gold = (G.player.gold || 0) + 15;
+    for (const id of G.relics) {
+      const rel = RELIC_DEFS[id];
+      if (rel && rel.onWin) rel.onWin(G);
+    }
+    // 奖励：选卡
+    G.state = "reward";
+    show("reward");
+    renderReward();
+    renderExtraHud();
+  }
+
+  // ---------- 地图 ----------
+  function genMap() {
+    const rows = 6;
+    G.map = [];
+    for (let r = 0; r < rows; r++) {
+      const row = [];
+      const n = randi(2, 4);
+      for (let i = 0; i < n; i++) {
+        let t;
+        if (r === rows - 1) t = "boss";
+        else if (r === 0) t = "combat";
+        else t = pick(["combat","combat","combat","elite","rest","reward","shop"]);
+        const def = NODE_TYPES.find(d => d.t === t) || { icon: "👑", name: "Boss" };
+        row.push({ t, icon: t === "boss" ? "👑" : def.icon, name: t === "boss" ? "Boss" : def.name, done: false });
+      }
+      G.map.push(row);
+    }
+    G.mapRow = 0; G.mapCol = 0;
+    // 节点可达性统一在 renderMap 里按当前层推导，这里不再手动打标记
+  }
+
+  function renderMap() {
+    show("mapscene");
+    const mapEl = document.getElementById("map");
+    mapEl.innerHTML = "";
+    for (let r = 0; r < G.map.length; r++) {
+      const rowEl = document.createElement("div");
+      rowEl.className = "map-row";
+      for (let c = 0; c < G.map[r].length; c++) {
+        const node = G.map[r][c];
+        // 可达性每次渲染都重新推导：只有当前层的节点可选（第 0 层只有起点）。
+        // 旧写法只在 backToMap 里给新层打标记、却从不清除，导致上一层残留的
+        // reachable 让旧节点一直显示为可点，点了又因不在当前层而被 enterNode 直接 return，
+        // 表现为"点了没反应、卡在这一层"。
+        node.reachable = !node.done && r === G.mapRow && (r > 0 || c === 0);
+        const div = document.createElement("div");
+        div.className = "map-node";
+        if (node.done) div.classList.add("done");
+        if (node.reachable) div.classList.add("reachable");
+        if (r === G.mapRow && c === G.mapCol) div.classList.add("cur");
+        div.textContent = node.icon;
+        div.title = node.name;
+        if (node.reachable && !node.done) {
+          div.addEventListener("click", () => enterNode(r, c));
+        }
+        rowEl.appendChild(div);
+      }
+      mapEl.appendChild(rowEl);
+    }
+    document.getElementById("floor").textContent = G.floor;
+  }
+
+  function enterNode(r, c) {
+    if (r !== G.mapRow) return;                       // 只能进入当前层
+    const node = G.map[r] && G.map[r][c];
+    if (!node || !node.reachable || node.done) return;
+    G.mapRow = r; G.mapCol = c;
+    node.done = true;
+    if (node.t === "combat" || node.t === "elite" || node.t === "boss") {
+      startBattle(node.t);
+    } else if (node.t === "rest") {
+      G.state = "rest"; show("rest");
+    } else if (node.t === "reward") {
+      // 宝箱：直接给选卡 + 回血
+      G.player.hp = Math.min(G.player.maxHp, G.player.hp + Math.floor(G.player.maxHp * 0.15));
+      G.state = "reward"; show("reward"); renderReward();
+    } else if (node.t === "shop") {
+      G.state = "shop"; show("shop"); renderShop();
+    }
+  }
+
+  // 节点结束后回到地图（下一行）
+  function backToMap() {
+    G.mapRow++;
+    // 必须先判越界：打完顶层 Boss 后 mapRow 会等于 map.length，
+    // 旧写法先访问 G.map[G.mapRow].forEach 会抛 TypeError，通关流程直接中断
+    if (G.mapRow >= G.map.length) { return gameOver(true); }
+    G.floor++;
+    renderMap();
+  }
+
+  // ---------- 奖励 ----------
+  function renderReward() {
+    const cards = document.getElementById("rewardCards");
+    cards.innerHTML = "";
+    document.getElementById("rewardTitle").textContent = "选择一张卡牌加入牌组";
+    const picks = [];
+    const copy = REWARD_POOL.slice();
+    while (picks.length < 3 && copy.length) { picks.push(copy.splice(randi(0, copy.length - 1), 1)[0]); }
+    for (const id of picks) {
+      const def = CARD_DEFS[id];
+      const card = document.createElement("div");
+      card.className = "card t-" + def.type;
+      card.innerHTML = `<div class="cost">${def.cost}</div><div class="cname">${def.name}</div><div class="ctype">${typeLabel(def.type)}</div><div class="cdesc">${def.desc}</div>`;
+      card.addEventListener("click", () => { G.deck.push({ id }); renderBattleDeckCount(); backToMap(); });
+      cards.appendChild(card);
+    }
+  }
+  document.getElementById("skipReward").addEventListener("click", backToMap);
+
+  function typeLabel(t) { return t === "attack" ? "攻击" : t === "skill" ? "技能" : "能力"; }
+
+  // ---------- 休息 ----------
+  document.getElementById("restHeal").addEventListener("click", () => {
+    G.player.hp = Math.min(G.player.maxHp, G.player.hp + Math.floor(G.player.maxHp * 0.3));
+    backToMap();
+  });
+  document.getElementById("restUpgrade").addEventListener("click", () => {
+    const list = document.getElementById("upgradeList");
+    list.innerHTML = "";
+    G.deck.forEach((c, i) => {
+      const def = CARD_DEFS[c.id];
+      const item = document.createElement("div");
+      item.className = "upgrade-item";
+      item.innerHTML = `<div class="uname">${def.name}${G.cur.upgraded[c.id] ? " ✦" : ""}</div><div class="udesc">${def.desc}</div>`;
+      item.addEventListener("click", () => { G.cur.upgraded[c.id] = 1; list.innerHTML = "<p style='text-align:center;color:#9b8cc4'>已升级 ✦</p>"; setTimeout(backToMap, 600); });
+      list.appendChild(item);
+    });
+  });
+
+  // ---------- 渲染战斗 ----------
+  function renderBattle() {
+    document.getElementById("floor").textContent = G.floor;
+    document.getElementById("energy").textContent = G.player.energy;
+    document.getElementById("maxenergy").textContent = G.player.maxEnergy;
+    document.getElementById("php").style.width = (G.player.hp / G.player.maxHp * 100) + "%";
+    document.getElementById("ptext").textContent = G.player.hp + "/" + G.player.maxHp;
+    document.getElementById("pblock").textContent = "🛡 " + G.player.block;
+    renderBattleDeckCount();
+    // 玩家状态
+    document.getElementById("pstatus").innerHTML = statusTags(G.player.statuses);
+
+    // 敌人
+    const enemiesEl = document.getElementById("enemies");
+    enemiesEl.innerHTML = "";
+    for (const e of G.enemies) {
+      const div = document.createElement("div");
+      div.className = "enemy";
+      if (e === G.target && !e.dead) div.classList.add("target");
+      if (e.dead) div.style.opacity = 0.35;
+      if (e._flash > 0) { div.style.borderColor = "#ff5b6e"; e._flash--; }
+      div.innerHTML = `
+        <div class="ename">${e.name}</div>
+        <div class="ehp"><div class="ehpfill" style="width:${e.hp / e.maxHp * 100}%"></div><span>${e.hp}/${e.maxHp}</span></div>
+        <div class="eblock">🛡 ${e.block || 0}</div>
+        <div class="intent">${e.dead ? "💀" : intentText(e.intent)}</div>
+        <div class="estatus">${statusTags(e.statuses)}</div>`;
+      div.addEventListener("click", () => { G.target = e; renderBattle(); });
+      enemiesEl.appendChild(div);
+    }
+
+    // 手牌
+    const handEl = document.getElementById("hand");
+    handEl.innerHTML = "";
+    for (const c of G.hand) {
+      const def = CARD_DEFS[c.id];
+      const card = document.createElement("div");
+      const playable = G.player.energy >= def.cost;
+      card.className = "card t-" + def.type + (playable ? " playable" : " disabled");
+      const upg = G.cur.upgraded[c.id] ? " ✦" : "";
+      card.innerHTML = `<div class="cost">${def.cost}</div><div class="cname">${def.name}${upg}</div><div class="ctype">${typeLabel(def.type)}</div><div class="cdesc">${def.desc}</div>`;
+      if (playable) card.addEventListener("click", () => playCard(c));
+      handEl.appendChild(card);
+    }
+
+    // 附加 HUD：金币 / 遗物 / 药水
+    renderExtraHud();
+  }
+  function renderBattleDeckCount() {
+    document.getElementById("deckcount").textContent = "牌堆 " + G.draw.length + " · 弃 " + G.discard.length;
+  }
+  function statusTags(st) {
+    let s = "";
+    if (st.poison) s += `<span class="tag">☠${st.poison}</span>`;
+    if (st.vuln) s += `<span class="tag">🔻${st.vuln}</span>`;
+    if (st.weak) s += `<span class="tag">💧${st.weak}</span>`;
+    return s;
+  }
+
+  // ---------- 出牌 ----------
+  function playCard(c) {
+    const def = CARD_DEFS[c.id];
+    if (G.player.energy < def.cost) return;
+    const ok = def.effect(G);
+    if (ok === false) { flashMsg("需要选择目标"); return; }
+    G.player.energy -= def.cost;
+    // 移出手牌到弃牌堆
+    const i = G.hand.indexOf(c); if (i >= 0) G.hand.splice(i, 1); G.discard.push(c);
+    // 敌人全死？
+    if (G.enemies.every(e => e.dead)) { return battleWin(); }
+    // 玩家死亡？
+    if (G.player.hp <= 0) { G.player.hp = 0; return gameOver(false); }
+    renderBattle();
+  }
+
+  // ---------- 本机战绩（localStorage） ----------
+  const REC_KEY = "sts_records";
+  function loadRec() {
+    try { return JSON.parse(localStorage.getItem(REC_KEY) || "{}") || {}; }
+    catch (e) { return {}; }
+  }
+  function submitRun(win) {
+    // floor 语义：通关时 G.floor 已被 backToMap 加到 7，实际清掉的是 6 层；
+    // 中途倒下时第 G.floor 层没打完，所以已通关层数 = floor - 1
+    const cleared = win ? 6 : Math.max(0, G.floor - 1);
+    const r = loadRec();
+    r.runs = (r.runs || 0) + 1;
+    r.wins = (r.wins || 0) + (win ? 1 : 0);
+    r.bestFloor = Math.max(r.bestFloor || 0, cleared);
+    r.bestDeck = Math.max(r.bestDeck || 0, G.deck.length);
+    try { localStorage.setItem(REC_KEY, JSON.stringify(r)); } catch (e) {}
+    return r;
+  }
+  function recHTML(r) {
+    if (!r || !r.runs) return '<span class="empty">还没有战绩，先爬一层吧</span>';
+    return '<div class="rec best"><div class="rk">通关次数</div><div class="rv">' + (r.wins || 0) + '</div></div>' +
+           '<div class="rec"><div class="rk">最深到达</div><div class="rv">' + (r.bestFloor || 0) + '/6</div></div>' +
+           '<div class="rec"><div class="rk">最大牌组</div><div class="rv">' + (r.bestDeck || 0) + '</div></div>' +
+           '<div class="rec"><div class="rk">局数</div><div class="rv">' + r.runs + '</div></div>';
+  }
+  function renderRecords() {
+    const html = recHTML(loadRec());
+    const a = document.getElementById("stsRecords");
+    const b = document.getElementById("stsRecordsOver");
+    if (a) a.innerHTML = html;
+    if (b) b.innerHTML = html;
+  }
+
+  // ---------- 结束 ----------
+  function gameOver(win) {
+    G.state = "over";
+    const rec = submitRun(win);
+    show("gameover");
+    document.getElementById("goTitle").textContent = win ? "通关！" : "你倒下了";
+    document.getElementById("goStats").innerHTML = win
+      ? `你击败了 Boss，登顶尖塔！<br>剩余生命 <b>${G.player.hp}</b>　牌组 <b>${G.deck.length}</b> 张`
+      : `你倒在了第 <b>${G.floor}</b> 层<br>牌组 <b>${G.deck.length}</b> 张`;
+    document.getElementById("stsRecordsOver").innerHTML = recHTML(rec);
+  }
+
+  // ---------- 消息 ----------
+  let msgTimer;
+  function flashMsg(t) {
+    let el = document.getElementById("battleMsg");
+    if (!el) { el = document.createElement("div"); el.id = "battleMsg"; el.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.7);color:#ffd86b;padding:8px 16px;border-radius:8px;z-index:50;pointer-events:none;"; document.body.appendChild(el); }
+    el.textContent = t; el.style.opacity = 1;
+    clearTimeout(msgTimer); msgTimer = setTimeout(() => el.style.opacity = 0, 1200);
+  }
+
+  // ---------- 场景切换 ----------
+  function show(name) {
+    for (const s of document.querySelectorAll(".scene")) s.classList.add("hidden");
+    const el = document.getElementById(name); if (el) el.classList.remove("hidden");
+  }
+
+  // ---------- 战斗结束后回到地图 ----------
+  // battleWin -> reward -> 选完卡 backToMap（已在 skipReward 与卡牌点击处理）
+  // 休息/宝箱结束 -> backToMap
+
+  // ---------- 启动 ----------
+  function newRun() {
+    // 遗物/药水挂在 G 上（renderRelics 等读的是 G.relics，不能塞进 G.player）
+    // 只有 strength 会被 dealDamage 读取。dexterity 原本声明了却全无引用，
+    // 而菜单还宣称"敏捷提升所有格挡值"，属于虚假宣传 → 移除该死字段并改文案。
+    G.player = { hp: 60, maxHp: 60, block: 0, energy: 3, maxEnergy: 3, statuses: {}, gold: 50, strength: 0 };
+    G.relics = [];
+    G.potions = [];
+    G.deck = STARTER_DECK.map(id => ({ id }));
+    G.cur.upgraded = {};
+    G.floor = 1;
+    genMap();
+    renderMap();
+  }
+
+  // ---------- 遗物、药水、商店渲染与交互 ----------
+  function renderRelics() {
+    const bar = document.getElementById("relicsBar");
+    if (!bar) return;
+    bar.innerHTML = "";
+    G.relics.forEach(id => {
+      const def = RELIC_DEFS[id];
+      if (!def) return;
+      const span = document.createElement("span");
+      span.className = "relic-badge";
+      span.textContent = def.name;
+      bar.appendChild(span);
+    });
+  }
+
+  function renderPotions() {
+    const bar = document.getElementById("potionsBar");
+    if (!bar) return;
+    bar.innerHTML = "";
+    G.potions.forEach((id, idx) => {
+      const def = POTION_DEFS[id];
+      if (!def) return;
+      const btn = document.createElement("button");
+      btn.className = "potion-btn";
+      btn.textContent = def.name;
+      btn.addEventListener("click", () => {
+        def.effect(G);
+        G.potions.splice(idx, 1);
+        renderPotions();
+        renderBattle();
+      });
+      bar.appendChild(btn);
+    });
+  }
+
+  function renderShop() {
+    const container = document.getElementById("shopContent");
+    container.innerHTML = "";
+    const goldSpan = document.getElementById("shopGold");
+    goldSpan.textContent = G.player.gold;
+    const items = [];
+    const cardPool = REWARD_POOL.slice();
+    while (items.length < 3 && cardPool.length) {
+      // splice 取出，避免同一张卡重复上架
+      const id = cardPool.splice(randi(0, cardPool.length - 1), 1)[0];
+      items.push({ type: "card", id });
+    }
+    const relicIds = Object.keys(RELIC_DEFS);
+    if (relicIds.length) items.push({ type: "relic", id: pick(relicIds) });
+    const potionIds = Object.keys(POTION_DEFS);
+    if (potionIds.length) items.push({ type: "potion", id: pick(potionIds) });
+    items.forEach(it => {
+      const div = document.createElement("div");
+      div.className = "shop-item";
+      if (it.type === "card") {
+        const def = CARD_DEFS[it.id];
+        const cost = def.cost * 5;
+        div.innerHTML = `${def.name}<br>费用: ${cost}`;
+        div.addEventListener("click", () => buyItem(it, cost));
+      } else if (it.type === "relic") {
+        const def = RELIC_DEFS[it.id];
+        const cost = 60;
+        div.innerHTML = `${def.name}<br>遗物`;
+        div.addEventListener("click", () => buyItem(it, cost));
+      } else if (it.type === "potion") {
+        const def = POTION_DEFS[it.id];
+        const cost = def.cost;
+        div.innerHTML = `${def.name}<br>药水`;
+        div.addEventListener("click", () => buyItem(it, cost));
+      }
+      container.appendChild(div);
+    });
+  }
+
+  function buyItem(item, price) {
+    if (G.player.gold < price) { flashMsg("金币不足"); return; }
+    G.player.gold -= price;
+    if (item.type === "card") {
+      G.deck.push({ id: item.id });
+    } else if (item.type === "relic") {
+      G.relics.push(item.id);
+    } else if (item.type === "potion") {
+      G.potions.push(item.id);
+    }
+    renderShop();
+    renderBattleDeckCount();
+    document.getElementById("gold").textContent = `🪙 ${G.player.gold}`;
+  }
+
+  // 金币 / 遗物 / 药水的附加 HUD 刷新
+  //
+  // ⚠️ 这里原先是 4 组"猴子补丁"，形如：
+  //      const _originalRenderBattle = renderBattle;
+  //      function renderBattle() { _originalRenderBattle(); ... }
+  // 同一作用域内重复声明同名函数时，后声明的会覆盖先声明的（函数声明提升），
+  // 所以 `_originalRenderBattle` 拿到的其实是包装后的 renderBattle 自己，
+  // 调用即无限递归 → RangeError: Maximum call stack size exceeded。
+  // 点地图节点走的是 enterNode，一进去就爆栈，表现为"第一层点不进去"。
+  // 正确做法：只用一个唯一命名的辅助函数，由各处显式调用。
+  function renderExtraHud() {
+    const goldEl = document.getElementById("gold");
+    if (goldEl) goldEl.textContent = `🪙 ${G.player.gold || 0}`;
+    renderRelics();
+    renderPotions();
+  }
+
+  document.getElementById("leaveShopBtn").addEventListener("click", () => {
+    backToMap();
+  });
+
+  // ---------- 事件 ----------
+  document.getElementById("endTurn").addEventListener("click", endTurn);
+  document.getElementById("startBtn").addEventListener("click", newRun);
+  document.getElementById("retryBtn").addEventListener("click", newRun);
+  renderRecords();
+  show("menu");
+})();
+
+</script>
+</body>
+</html>

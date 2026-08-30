@@ -1,0 +1,68 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #0b0d17; }
+body { font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; }
+
+#game { position: fixed; inset: 0; }
+#cv { display: block; width: 100%; height: 100%; background: #0b0d17; touch-action: none; }
+
+/* HUD */
+#hud { position: absolute; top: 0; left: 0; right: 0; padding: 10px 14px; pointer-events: none; }
+.hud-top { display: flex; justify-content: space-between; color: #e7ecff; font-weight: 700; font-size: 18px; text-shadow: 0 1px 2px #000; }
+.bars { margin-top: 8px; }
+.bar { position: relative; height: 16px; border-radius: 8px; background: #1c2138; overflow: hidden; margin-bottom: 6px; border: 1px solid #2a3150; }
+.bar > div { position: absolute; inset: 0; width: 0%; transition: width .12s linear; }
+.bar span { position: absolute; inset: 0; text-align: center; font-size: 11px; line-height: 16px; color: #fff; text-shadow: 0 1px 1px #000; font-weight: 700; }
+.bar.hp > div { background: linear-gradient(90deg, #ff5b6e, #ff8a5b); }
+.bar.xp { height: 12px; }
+.bar.xp > div { background: linear-gradient(90deg, #5b8bff, #8a5bff); }
+
+/* 摇杆
+   pointer-events:none 很关键：摇杆会显示在指针正下方，若不穿透，后续的
+   pointermove 就被这个 div 截走、送不到 canvas 上，摇杆直接"拖不动"。
+   （触屏因为有隐式指针捕获仍可移动，鼠标拖动则 100% 失效。） */
+#stick { position: absolute; left: 26px; bottom: 26px; width: 110px; height: 110px; border-radius: 50%;
+  background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.18);
+  display: none; touch-action: none; pointer-events: none; }
+#stick.active { display: block; }
+#stick-knob { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px;
+  border-radius: 50%; background: rgba(255,255,255,0.5); }
+
+/* 覆盖层 */
+.overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: rgba(8,10,22,0.86); color: #eef2ff; text-align: center; padding: 20px; z-index: 10; }
+.overlay.hidden { display: none; }
+.overlay h1 { font-size: 36px; margin-bottom: 10px; letter-spacing: 2px; }
+.overlay h2 { font-size: 26px; margin-bottom: 18px; }
+.sub { color: #9aa6d6; margin-bottom: 16px; }
+.tip { color: #7e8bbf; font-size: 13px; margin: 3px 0; }
+button { margin-top: 22px; padding: 12px 34px; font-size: 18px; font-weight: 700; color: #0b0d17;
+  background: linear-gradient(90deg, #5b8bff, #8a5bff); border: none; border-radius: 30px; cursor: pointer; }
+button:active { transform: scale(0.97); }
+
+#upgrade-cards { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; max-width: 720px; }
+.card { width: 200px; min-height: 130px; background: #161b30; border: 2px solid #2a3150; border-radius: 14px;
+  padding: 16px; cursor: pointer; transition: transform .1s, border-color .1s; display: flex; flex-direction: column; }
+.card:hover { transform: translateY(-4px); border-color: #8a5bff; }
+.card .ico { font-size: 34px; }
+.card .name { font-weight: 700; margin: 8px 0 6px; font-size: 17px; }
+.card .desc { color: #9aa6d6; font-size: 13px; line-height: 1.4; }
+
+#goStats { color: #c7d0f5; font-size: 16px; line-height: 1.9; margin: 10px 0; }
+#goStats b { color: #ffd86b; }
+
+/* 历史战绩 */
+.records { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 14px 0 0; }
+.records .rec {
+  background: rgba(22, 27, 48, 0.85); border: 1px solid #2a3150;
+  border-radius: 10px; padding: 6px 12px; min-width: 74px;
+}
+.records .rec .rk { font-size: 10px; color: #7e8bbf; font-weight: 700; }
+.records .rec .rv { font-size: 15px; font-weight: 900; color: #eef2ff; }
+.records .rec.best .rv { color: #ffd86b; }
+.records .empty { font-size: 12px; color: #7e8bbf; }
+
+.back-home {
+  display: inline-block; margin-top: 14px; font-size: 12px; color: #9aa6d6;
+  text-decoration: none; border-bottom: 1px dashed #4a5580; padding-bottom: 1px;
+}
+.back-home:hover { color: #eef2ff; }

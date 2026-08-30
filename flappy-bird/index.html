@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>像素鸟 Flappy Bird</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="game" width="400" height="600"></canvas>
+    <div id="overlay" class="overlay">
+      <div id="title-screen" class="screen shown">
+        <h1>像素鸟</h1>
+        <p class="hint">空格 / 点击屏幕 拍翅</p>
+        <div id="fbRecords" class="records"></div>
+        <button id="start-btn" class="btn">开始</button>
+        <p class="best">最高分 <span id="best-score">0</span></p>
+        <a class="back-home" href="../index.html">← 返回游戏列表</a>
+      </div>
+      <div id="over-screen" class="screen">
+        <h2>游戏结束</h2>
+        <p class="score-line">本局 <span id="cur-score">0</span> &nbsp; 最高 <span id="best-score-2">0</span></p>
+        <div id="fbRecordsOver" class="records"></div>
+        <button id="retry-btn" class="btn">再来一局</button>
+        <a class="back-home" href="../index.html">← 返回游戏列表</a>
+      </div>
+    </div>
+  </div>
+  <script src="game.js"></script>
+</body>
+</html>

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>吸血鬼幸存者 · 迷你版</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="game">
+    <canvas id="cv"></canvas>
+
+    <!-- HUD -->
+    <div id="hud">
+      <div class="hud-top">
+        <div id="timer">00:00</div>
+        <div id="kills">击杀 0</div>
+      </div>
+      <div class="bars">
+        <div class="bar hp"><div id="hpfill"></div><span id="hptext">100/100</span></div>
+        <div class="bar xp"><div id="xpfill"></div><span id="lvtext">Lv.1</span></div>
+      </div>
+    </div>
+
+    <!-- 摇杆（移动端） -->
+    <div id="stick"><div id="stick-knob"></div></div>
+
+    <!-- 升级三选一 -->
+    <div id="upgrade" class="overlay hidden">
+      <h2>升级！选择一项增益</h2>
+      <div id="upgrade-cards"></div>
+    </div>
+
+    <!-- 开始 / 结束 -->
+    <div id="menu" class="overlay">
+      <h1>吸血鬼幸存者</h1>
+      <p class="sub">活下去，割草，变强。</p>
+      <p class="tip">移动：WASD / 方向键 / 屏幕左下半拖动　·　武器自动攻击</p>
+      <p class="tip">目标：尽可能活得久，每关后三选一变强</p>
+      <div id="vsRecords" class="records"></div>
+      <button id="startBtn">开始游戏</button>
+      <a class="back-home" href="../index.html">← 返回游戏列表</a>
+    </div>
+
+    <div id="gameover" class="overlay hidden">
+      <h1 id="goTitle">你倒下了</h1>
+      <div id="goStats"></div>
+      <div id="vsRecordsOver" class="records"></div>
+      <button id="retryBtn">再来一局</button>
+      <a class="back-home" href="../index.html">← 返回游戏列表</a>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>

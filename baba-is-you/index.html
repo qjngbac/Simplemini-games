@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Baba Is You · 规则解谜</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="title">Baba Is You</div>
+      <div id="status" class="status"></div>
+    </header>
+
+    <div id="levelName" class="levelName">第 1 关</div>
+
+    <div id="rules" class="rules"></div>
+
+    <div class="stage">
+      <canvas id="game"></canvas>
+      <div id="overlay" class="overlay hidden">
+        <div class="ovCard">
+          <div id="overlayTitle" class="ovTitle">过关！</div>
+          <div id="overlayMsg" class="ovMsg"></div>
+          <div class="ovBtns">
+            <button id="ovNext" class="btn primary">下一关 (N)</button>
+            <button id="ovRestart" class="btn">重玩 (R)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="hint" class="hint"></div>
+
+    <div class="controls">
+      <button id="btnRestart" class="btn">重开 (R)</button>
+      <button id="btnUndo" class="btn">撤销 (Z)</button>
+      <button id="btnNext" class="btn">下一关 (N)</button>
+      <button id="btnLevels" class="btn">关卡选择</button>
+      <a class="btn backLink" href="../index.html">← 首页</a>
+    </div>
+
+    <div id="biyRecords" class="records"></div>
+
+    <div class="dpad">
+      <button id="padUp" class="pad">▲</button>
+      <div class="padRow">
+        <button id="padLeft" class="pad">◀</button>
+        <button id="padDown" class="pad">▼</button>
+        <button id="padRight" class="pad">▶</button>
+      </div>
+    </div>
+
+    <div id="levelSelect" class="levelSelect hidden">
+      <div class="lsCard">
+        <div class="lsHead">选择关卡</div>
+        <div id="levelList" class="levelList"></div>
+        <button id="lsClose" class="btn" onclick="document.getElementById('levelSelect').classList.add('hidden')">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="src/engine.js"></script>
+  <script src="src/levels.js"></script>
+  <script src="src/render.js"></script>
+  <script src="src/main.js"></script>
+</body>
+</html>

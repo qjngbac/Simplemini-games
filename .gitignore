@@ -1,0 +1,11 @@
+# 代理工作目录（不是交付物）
+.workbuddy/
+
+# 系统 / 编辑器
+.DS_Store
+Thumbs.db
+*.swp
+
+# 临时文件
+*.tmp
+__pycache__/

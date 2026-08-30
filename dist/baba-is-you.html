@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<script>
+/* file:// 下部分浏览器会禁用 localStorage，直接读写会抛 SecurityError 导致游戏白屏。
+   这里先探一次，不可用时退化成内存存储：游戏照常玩，只是战绩不落盘。 */
+(function () {
+  try { localStorage.setItem('__probe__', '1'); localStorage.removeItem('__probe__'); return; } catch (e) {}
+  var mem = {};
+  try {
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: function (k) { return Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null; },
+        setItem: function (k, v) { mem[k] = String(v); },
+        removeItem: function (k) { delete mem[k]; },
+        clear: function () { mem = {}; },
+        key: function (i) { var ks = Object.keys(mem); return i < ks.length ? ks[i] : null; },
+        get length() { return Object.keys(mem).length; }
+      }
+    });
+  } catch (e2) {}
+})();
+</script>
+
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Baba Is You · 规则解谜</title>
+  <style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  background: #0b0d12;
+  color: #e8e8ee;
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  -webkit-user-select: none; user-select: none;
+}
+.app {
+  max-width: 760px; margin: 0 auto; padding: 14px 14px 30px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+.topbar { width: 100%; display: flex; justify-content: space-between; align-items: baseline; }
+.title { font-size: 22px; font-weight: 800; letter-spacing: 0.5px; color: #ffe14a; }
+.status { font-size: 14px; color: #7ee0a0; min-height: 18px; }
+.levelName { font-size: 16px; font-weight: 700; color: #fff; align-self: flex-start; }
+
+.rules { width: 100%; display: flex; flex-wrap: wrap; gap: 6px; min-height: 30px; }
+.chip {
+  font-size: 12px; padding: 4px 9px; border-radius: 999px;
+  background: #1c2030; border: 1px solid #2e3650; color: #cdd6ff; font-weight: 600;
+}
+.chip-none { color: #888; border-color: #2a2e3a; }
+
+.stage { position: relative; width: min(72vh, 720px); max-width: 100%; }
+#game {
+  width: 100%; height: auto; display: block; border-radius: 12px;
+  background: #11131a; box-shadow: 0 10px 40px rgba(0,0,0,0.5); touch-action: none;
+}
+
+.overlay {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(8,10,16,0.72); border-radius: 12px; backdrop-filter: blur(2px);
+}
+.overlay.hidden { display: none; }
+.ovCard {
+  background: #161a26; border: 1px solid #2e3650; border-radius: 14px;
+  padding: 22px 26px; text-align: center; max-width: 86%;
+}
+.ovTitle { font-size: 26px; font-weight: 800; margin-bottom: 8px; }
+.ovMsg { font-size: 14px; color: #c4ccdf; margin-bottom: 16px; line-height: 1.5; }
+.ovBtns { display: flex; gap: 10px; justify-content: center; }
+/* JS 里 showOverlay() 会 toggle("can-next")，但样式表一直没定义这个状态，
+   于是"下一关"按钮在失败页和"全部通关"页也会显示，点了只是把自己再弹一遍。 */
+#ovNext { display: none; }
+.overlay.can-next #ovNext { display: inline-block; }
+
+.hint { font-size: 13px; color: #9aa3bd; line-height: 1.5; max-width: 92%; text-align: center; min-height: 18px; }
+
+.controls { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.btn {
+  font-size: 14px; padding: 9px 14px; border-radius: 9px; cursor: pointer;
+  background: #1c2030; color: #e8e8ee; border: 1px solid #2e3650; font-weight: 600;
+  transition: background .15s, transform .05s;
+}
+.btn:hover { background: #262c40; }
+.btn:active { transform: translateY(1px); }
+.btn.primary { background: #2f6df0; border-color: #2f6df0; color: #fff; }
+.btn.primary:hover { background: #3f7bff; }
+
+.dpad { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 4px; }
+.padRow { display: flex; gap: 6px; }
+.pad {
+  width: 54px; height: 46px; font-size: 18px; border-radius: 10px; cursor: pointer;
+  background: #1c2030; color: #e8e8ee; border: 1px solid #2e3650;
+}
+.pad:active { background: #2f6df0; }
+@media (hover: hover) and (pointer: fine) { .dpad { display: none; } }
+
+/* 首页返回链接（复用 .btn 外观） */
+a.btn.backLink { text-decoration: none; color: #e8e8ee; }
+a.btn.backLink:hover { background: #262c40; }
+
+/* 历史战绩 */
+.records { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 10px 0; }
+.records .rec {
+  background: #161a26; border: 1px solid #2e3650;
+  border-radius: 10px; padding: 6px 13px; min-width: 80px; text-align: center;
+}
+.records .rec .rk { font-size: 10px; color: #9aa3bd; font-weight: 700; }
+.records .rec .rv { font-size: 16px; font-weight: 900; color: #e8e8ee; }
+.records .rec.best .rv { color: #ffe14a; }
+.records .empty { font-size: 12px; color: #6b7488; }
+
+.levelSelect {
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(8,10,16,0.8); z-index: 20;
+}
+.levelSelect.hidden { display: none; }
+.lsCard {
+  background: #161a26; border: 1px solid #2e3650; border-radius: 14px;
+  padding: 20px; width: min(420px, 92%); display: flex; flex-direction: column; gap: 12px;
+}
+.lsHead { font-size: 18px; font-weight: 800; }
+.levelList { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.lvBtn {
+  text-align: left; font-size: 14px; padding: 10px 12px; border-radius: 9px; cursor: pointer;
+  background: #1c2030; color: #e8e8ee; border: 1px solid #2e3650; font-weight: 600;
+}
+.lvBtn:hover { background: #262c40; }
+
+</style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="title">Baba Is You</div>
+      <div id="status" class="status"></div>
+    </header>
+
+    <div id="levelName" class="levelName">第 1 关</div>
+
+    <div id="rules" class="rules"></div>
+
+    <div class="stage">
+      <canvas id="game"></canvas>
+      <div id="overlay" class="overlay hidden">
+        <div class="ovCard">
+          <div id="overlayTitle" class="ovTitle">过关！</div>
+          <div id="overlayMsg" class="ovMsg"></div>
+          <div class="ovBtns">
+            <button id="ovNext" class="btn primary">下一关 (N)</button>
+            <button id="ovRestart" class="btn">重玩 (R)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="hint" class="hint"></div>
+
+    <div class="controls">
+      <button id="btnRestart" class="btn">重开 (R)</button>
+      <button id="btnUndo" class="btn">撤销 (Z)</button>
+      <button id="btnNext" class="btn">下一关 (N)</button>
+      <button id="btnLevels" class="btn">关卡选择</button>
+      <a class="btn backLink" href="index.html">← 首页</a>
+    </div>
+
+    <div id="biyRecords" class="records"></div>
+
+    <div class="dpad">
+      <button id="padUp" class="pad">▲</button>
+      <div class="padRow">
+        <button id="padLeft" class="pad">◀</button>
+        <button id="padDown" class="pad">▼</button>
+        <button id="padRight" class="pad">▶</button>
+      </div>
+    </div>
+
+    <div id="levelSelect" class="levelSelect hidden">
+      <div class="lsCard">
+        <div class="lsHead">选择关卡</div>
+        <div id="levelList" class="levelList"></div>
+        <button id="lsClose" class="btn" onclick="document.getElementById('levelSelect').classList.add('hidden')">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+/*
+ * Baba Is You — 规则引擎（纯逻辑，无 DOM 依赖）
+ * 可在浏览器（window.BIY）与 Node（module.exports）中运行。
+ *
+ * 设计要点：
+ *  - 规则每步重算（不缓存为事件），避免状态不一致。
+ *  - 文本块是可推实体；文本块本身用名义类型 'TEXT' 参与规则（如 TEXT IS PUSH）。
+ *  - 属性优先级固定：STOP 优先于 PUSH（既是 STOP 又是 PUSH 时阻挡移动）。
+ *  - 移动用「推动链」递归：多块 PUSH 连排一起推或一起卡住。
+ */
+(function (root, factory) {
+  const api = factory();
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.BIY = api;
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  // ---------- 词表 ----------
+  const NOUNS = ['BABA', 'WALL', 'FLAG', 'ROCK', 'WATER', 'SKULL', 'TREE', 'DOOR', 'KEY', 'TEXT'];
+  const PROPS = ['YOU', 'WIN', 'STOP', 'PUSH', 'SINK', 'DEFEAT', 'MOVE', 'HOT', 'MELT', 'OPEN', 'SHUT', 'WEAK', 'ATE', 'GROUP'];
+  const isNounWord = (w) => NOUNS.indexOf(w) >= 0;
+  const isPropWord = (w) => PROPS.indexOf(w) >= 0;
+
+  // 文本字符 → [word, category]
+  const TEXT_CHARS = {
+    B: ['BABA', 'NOUN'], W: ['WALL', 'NOUN'], F: ['FLAG', 'NOUN'], O: ['ROCK', 'NOUN'],
+    A: ['WATER', 'NOUN'], K: ['SKULL', 'NOUN'], T: ['TREE', 'NOUN'], D: ['DOOR', 'NOUN'],
+    E: ['KEY', 'NOUN'], U: ['TEXT', 'NOUN'],
+    I: ['IS', 'VERB'],
+    Y: ['YOU', 'PROPERTY'], P: ['PUSH', 'PROPERTY'], S: ['STOP', 'PROPERTY'],
+    N: ['WIN', 'PROPERTY'], Q: ['EMPTY', 'PROPERTY'], Z: ['SINK', 'PROPERTY'],
+    C: ['DEFEAT', 'PROPERTY'], V: ['MOVE', 'PROPERTY'], H: ['HOT', 'PROPERTY'],
+    L: ['MELT', 'PROPERTY'], X: ['NOT', 'PREFIX'],
+  };
+  // 物体字符 → noun
+  const OBJ_CHARS = {
+    b: 'BABA', '#': 'WALL', '*': 'FLAG', o: 'ROCK', '~': 'WATER',
+    k: 'SKULL', r: 'TREE', d: 'DOOR', e: 'KEY',
+  };
+
+  // ---------- 关卡加载 ----------
+  function loadLevel(def) {
+    const rows = def.map;
+    const h = rows.length;
+    const w = rows.reduce((m, r) => Math.max(m, r.length), 0);
+    const entities = [];
+    let id = 1;
+    for (let y = 0; y < h; y++) {
+      const row = rows[y];
+      for (let x = 0; x < row.length; x++) {
+        const ch = row[x];
+        if (ch === ' ' || ch === '.') continue;
+        if (OBJ_CHARS[ch]) {
+          entities.push({ id: id++, category: 'object', noun: OBJ_CHARS[ch], x, y, lastDir: null });
+        } else if (TEXT_CHARS[ch]) {
+          const [word, cat] = TEXT_CHARS[ch];
+          entities.push({ id: id++, category: 'text', word, cat, x, y, lastDir: null });
+        }
+        // 未知字符忽略
+      }
+    }
+
+    return {
+      w, h, name: def.name || '', hint: def.hint || '', status: 'playing',
+      entities, props: {}, transforms: [], empties: [], activeSentences: [],
+    };
+  }
+
+  function cloneState(state) {
+    return {
+      w: state.w, h: state.h, name: state.name, hint: state.hint, status: state.status,
+      entities: state.entities.map((e) => ({ ...e, lastDir: e.lastDir ? { ...e.lastDir } : null })),
+      props: state.props, transforms: state.transforms, empties: state.empties, activeSentences: state.activeSentences,
+    };
+  }
+
+  // 用于 BFS / 去重：序列化实体 + 规则集
+  function serialize(state) {
+    const es = state.entities
+      .map((e) => (e.category === 'text' ? 'T' + e.word + e.x + ',' + e.y : 'O' + e.noun + e.x + ',' + e.y))
+      .sort()
+      .join('|');
+    return es;
+  }
+
+  // ---------- 规则解析 ----------
+  function hasProp(state, e, prop) {
+    if (e.category === 'object') {
+      const s = state.props[e.noun];
+      return !! (s && s.has(prop));
+    }
+    // 文本块：仅受 'TEXT IS X' 影响
+    const s = state.props['TEXT'];
+    return !! (s && s.has(prop));
+  }
+
+  function computeRules(state) {
+    const texts = state.entities.filter((e) => e.category === 'text');
+    const at = (x, y) => texts.filter((t) => t.x === x && t.y === y);
+    const sentences = [];
+
+    function checkLine(x, y, dx, dy) {
+      const a = at(x, y).find((t) => t.cat === 'NOUN');
+      if (!a) return;
+      const isb = at(x + dx, y + dy).find((t) => t.word === 'IS');
+      if (!isb) return;
+      let nx = x + 2 * dx, ny = y + 2 * dy;
+      let notFlag = false;
+      let c = at(nx, ny).find(
+        (t) => t.cat === 'NOUN' || t.cat === 'PROPERTY' || (t.cat === 'PREFIX' && t.word === 'NOT')
+      );
+      if (c && c.cat === 'PREFIX' && c.word === 'NOT') {
+        notFlag = true;
+        nx += dx; ny += dy;
+        c = at(nx, ny).find((t) => t.cat === 'NOUN' || t.cat === 'PROPERTY');
+      }
+      if (!c) return;
+      const cells = [[x, y], [x + dx, y + dy], [nx, ny]];
+      if (notFlag) cells.push([nx - dx, ny - dy]); // NOT 格
+      sentences.push({ noun: a.word, prop: c.word, not: notFlag, cells });
+    }
+
+    for (const t of texts) {
+      checkLine(t.x, t.y, 1, 0); // 横向
+      checkLine(t.x, t.y, 0, 1); // 纵向
+    }
+
+    // 第一遍：结构规则 → 临时属性集（用于 STOP 阻断判定）
+    const prov = {};
+    const padd = (n, p) => { (prov[n] = prov[n] || new Set()).add(p); };
+    for (const s of sentences) if (!s.not) padd(s.noun, s.prop);
+
+    // STOP 阻断：规则所占三/四格中若有 STOP 物体实体，则该句失效
+    function blocked(s) {
+      for (const [cx, cy] of s.cells) {
+        const objs = state.entities.filter((e) => e.x === cx && e.y === cy);
+        for (const o of objs) {
+          const noun = o.category === 'text' ? 'TEXT' : o.noun;
+          const set = prov[noun];
+          if (set && set.has('STOP')) return true;
+        }
+      }
+      return false;
+    }
+    const active = sentences.filter((s) => !blocked(s));
+
+    // 第二遍：生效规则 → 最终属性集 / 转换 / 消除
+    const props = {};
+    const fadd = (n, p) => { (props[n] = props[n] || new Set()).add(p); };
+    const transforms = [];
+    const empties = [];
+    for (const s of active) {
+      if (s.not) continue;
+      if (s.prop === 'EMPTY') { empties.push(s.noun); continue; }
+      if (isNounWord(s.prop)) transforms.push({ from: s.noun, to: s.prop });
+      else fadd(s.noun, s.prop);
+    }
+    // 负规则：移除属性
+    for (const s of active) {
+      if (!s.not) continue;
+      const set = props[s.noun];
+      if (set) set.delete(s.prop);
+    }
+
+    state.props = props;
+    state.transforms = transforms;
+    state.empties = empties;
+    state.activeSentences = active;
+  }
+
+  // ---------- 移动 ----------
+  // 尝试把 entity（及其推动链）沿 (dx,dy) 移动一格；成功返回 true 并把链成员记入 moved
+  function tryMove(state, entity, dx, dy, moved) {
+    const chain = [entity];
+    const chainIds = new Set([entity.id]);
+    let cx = entity.x, cy = entity.y;
+    while (true) {
+      cx += dx; cy += dy;
+      if (cx < 0 || cy < 0 || cx >= state.w || cy >= state.h) return false; // 出界
+
+      const occ = state.entities.filter((e) => e.x === cx && e.y === cy);
+
+      if (occ.length === 0) break; // 前方为空，可移动
+
+      // 早期退出，如果第一格就被STOP阻挡
+      if (occ.some(e => hasProp(state, e, 'STOP'))) return false;
+
+      let hasStop = false;
+      const pushables = [];
+      for (const o of occ) {
+        if (o.id === entity.id) continue;
+        if (hasProp(state, o, 'STOP')) { hasStop = true; break; }
+        // 文本块总是可推的，或者物体具有PUSH/YOU属性
+        const pushable = o.category === 'text' || hasProp(state, o, 'PUSH') || hasProp(state, o, 'YOU');
+        if (pushable) pushables.push(o);
+      }
+      if (hasStop) return false; // STOP 阻挡
+      if (pushables.length > 0) {
+        for (const o of pushables) if (!chainIds.has(o.id)) { chainIds.add(o.id); chain.push(o); }
+        continue; // 继续向前扫描整条推动链
+      }
+      break; // 仅有可穿越（非 PUSH/非 STOP）物体 → 重叠进入
+    }
+    for (const o of chain) {
+      o.x += dx; o.y += dy;
+      if (o.category === 'object') o.lastDir = { x: dx, y: dy };
+      moved.add(o.id);
+    }
+    return true;
+  }
+
+  function applyInput(state, dir) {
+    if (state.status !== 'playing') return state.status;
+    computeRules(state);
+    const yous = state.entities.filter((e) => hasProp(state, e, 'YOU'));
+    // 沿移动方向「前排优先」，避免互相卡住
+    yous.sort((a, b) => (b.x * dir.x + b.y * dir.y) - (a.x * dir.x + a.y * dir.y));
+    const moved = new Set();
+    for (const e of yous) {
+      if (moved.has(e.id)) continue;
+      tryMove(state, e, dir.x, dir.y, moved);
+    }
+    // MOVE 物体：按其 lastDir 自动移动（已本回合动过的跳过）
+    const movers = state.entities.filter(
+      (e) => e.category === 'object' && hasProp(state, e, 'MOVE') && !moved.has(e.id)
+    );
+    for (const e of movers) {
+      const ld = e.lastDir;
+      if (!ld) continue;
+      tryMove(state, e, ld.x, ld.y, moved);
+    }
+
+    computeRules(state);
+    applyTransforms(state);
+    computeRules(state);
+    resolveInteractions(state);
+    return state.status;
+  }
+
+  function applyTransforms(state) {
+    for (const t of state.transforms) {
+      for (const e of state.entities) {
+        if (e.category === 'object' && e.noun === t.from) e.noun = t.to;
+      }
+    }
+    if (state.empties.length) {
+      const rm = new Set();
+      for (const n of state.empties) {
+        for (const e of state.entities) if (e.category === 'object' && e.noun === n) rm.add(e.id);
+      }
+      if (rm.size) {
+        state.entities = state.entities.filter((e) => !rm.has(e.id));
+      }
+    }
+  }
+
+  function resolveInteractions(state) {
+    const yous = state.entities.filter((e) => hasProp(state, e, 'YOU'));
+    // 胜利：任意 YOU 与 WIN 同格
+    let won = false;
+    for (const y of yous) {
+      const here = state.entities.filter((e) => e.x === y.x && e.y === y.y);
+      if (here.some((e) => hasProp(state, e, 'WIN'))) { won = true; break; }
+    }
+    const toRemove = new Set();
+    // 失败（DEFEAT）：YOU 与 DEFEAT 同格 → YOU 死亡
+    for (const y of yous) {
+      const here = state.entities.filter((e) => e.x === y.x && e.y === y.y && e.id !== y.id);
+      if (here.some((e) => hasProp(state, e, 'DEFEAT'))) toRemove.add(y.id);
+    }
+    // SINK：一格内有 SINK 且有其他物体 → 全部销毁（含 SINK 自身）
+    const cellMap = new Map();
+    for (const e of state.entities) {
+      const k = e.x + ',' + e.y;
+      if (!cellMap.has(k)) cellMap.set(k, []);
+      cellMap.get(k).push(e);
+    }
+    for (const arr of cellMap.values()) {
+      const sinks = arr.filter((e) => hasProp(state, e, 'SINK'));
+      if (sinks.length > 0 && arr.length > sinks.length) {
+        for (const e of arr) toRemove.add(e.id);
+      }
+      // MELT + HOT：MELT 被 HOT 融化
+      const hot = arr.filter((e) => hasProp(state, e, 'HOT'));
+      const melt = arr.filter((e) => hasProp(state, e, 'MELT'));
+      if (hot.length > 0 && melt.length > 0) {
+        for (const e of melt) toRemove.add(e.id);
+      }
+    }
+    if (toRemove.size) state.entities = state.entities.filter((e) => !toRemove.has(e.id));
+
+    if (won) state.status = 'won';
+    else {
+      const yousLeft = state.entities.filter((e) => hasProp(state, e, 'YOU'));
+      if (yousLeft.length === 0) state.status = 'lost';
+    }
+  }
+
+  // ---------- 便捷查询（供 UI） ----------
+  function activeRuleStrings(state) {
+    return state.activeSentences
+      .map((s) => s.noun + ' IS ' + (s.not ? 'NOT ' : '') + s.prop)
+      .filter((v, i, a) => a.indexOf(v) === i);
+  }
+
+  return {
+    NOUNS, PROPS, TEXT_CHARS, OBJ_CHARS,
+    loadLevel, cloneState, serialize, computeRules, hasProp,
+    tryMove, applyInput, applyTransforms, resolveInteractions, activeRuleStrings,
+  };
+});
+
+</script>
+  <script>
+/*
+ * Baba Is You — 关卡数据（ASCII）
+ * 设计原则：胜利严格依赖玩家「构造或修改规则」，初始绝不能直接赢。
+ * 图例：
+ *   物体：b=BABA  #=WALL  *=FLAG  o=ROCK  ~=WATER  k=SKULL  r=TREE  d=DOOR  e=KEY
+ *   文本：B=BABA W=WALL F=FLAG O=ROCK A=WATER K=SKULL T=TREE D=DOOR E=KEY U=TEXT
+ *         I=IS  Y=YOU  P=PUSH  S=STOP  N=WIN  Q=EMPTY  Z=SINK  C=DEFEAT  V=MOVE  H=HOT  L=MELT  X=NOT
+ *   '.' 或 ' ' = 空
+ *   规则三/四连文本必须「相邻无空格」，例如：BABA IS YOU = BIY，WALL IS STOP = WIS，FLAG IS WIN = FIN。
+ */
+(function (root, factory) {
+  const levels = factory();
+  if (typeof module !== "undefined" && module.exports) module.exports = levels;
+  if (typeof window !== "undefined") window.BIY_LEVELS = levels;
+})(typeof self !== "undefined" ? self : this, function () {
+  "use strict";
+  return [
+    // ===== 第一阶段：基础教学 =====
+    {
+      name: "第一关：旗子变胜利",
+      hint: "初始旗子不是胜利目标！把 N(WIN) 向上推进 F(FLAG) 和 I(IS) 的后方拼出 FLAG IS WIN，然后再触碰旗子！",
+      map: [
+        "..........",
+        ".BIY......",
+        ".....FI...",
+        ".......N..",
+        "..........",
+        "..b....*..",
+        "..........",
+      ],
+    },
+    {
+      name: "第二关：拆墙开路",
+      hint: "墙壁挡住了去路！推开 S(STOP) 破坏 WALL IS STOP 规则，穿过墙壁拼出 FLAG IS WIN 碰旗！",
+      map: [
+        "....#.....",
+        ".BIY#FI...",
+        ".WIS#...N.",
+        "....#.....",
+        ".b..#...*.",
+        "....#.....",
+        "....#.....",
+      ],
+    },
+    {
+      name: "第三关：墙即胜利",
+      hint: "这一关没有旗子！把 N(WIN) 推到 W(WALL) 和 I(IS) 右侧拼出 WALL IS WIN，碰墙即可通关！",
+      map: [
+        "..........",
+        ".BIY......",
+        ".WI....N..",
+        "..........",
+        ".....#....",
+        ".b...#....",
+        "..........",
+      ],
+    },
+
+    // ===== 第二阶段：进阶转换 =====
+    {
+      name: "第四关：移石填海",
+      hint: "WATER IS SINK 会吞没进入的一切！把石头(o)推进深水(~)同归于尽填出道路，拼出 FLAG IS WIN！",
+      map: [
+        "....~.....",
+        ".BIY~FI...",
+        ".OIP~...N.",
+        ".AIZ~.....",
+        ".b.o~...*.",
+        "....~.....",
+        "....~.....",
+      ],
+    },
+    {
+      name: "第五关：墙化作石",
+      hint: "整面墙壁封死了道路！把 O(ROCK) 推到 W I 后面组成 WALL IS ROCK，墙壁就会变成可以推开的石头！",
+      map: [
+        "....#.....",
+        ".BIY#.FI..",
+        ".WI.#.O.N.",
+        "....#.....",
+        ".b..#...*.",
+        "....#.....",
+        "....#.....",
+      ],
+    },
+    {
+      name: "第六关：虚无抹除",
+      hint: "拼出 WALL IS EMPTY 可以瞬间消除所有墙壁！消除阻挡后，把 N 拼到 FI 后面通关！",
+      map: [
+        "....#.....",
+        ".BIY#.FI..",
+        ".WI.#.Q.N.",
+        "....#.....",
+        ".b..#...*.",
+        "....#.....",
+        "....#.....",
+      ],
+    },
+
+    // ===== 第三阶段：危险与否定 =====
+    {
+      name: "第七关：骷髅危机",
+      hint: "骷髅是 DEFEAT 属性，触碰即死！推开 C(DEFEAT) 破坏致命规则，安全穿过骷髅群碰到旗子！",
+      map: [
+        "....k.....",
+        ".BIYk.FI..",
+        ".KICk...N.",
+        "....k.....",
+        ".b..k...*.",
+        "....k.....",
+        "....k.....",
+      ],
+    },
+    {
+      name: "第八关：否定之力",
+      hint: "X(NOT) 可以反转规则！把 NOT 推入组成 SKULL IS NOT DEFEAT，骷髅便不再致命！",
+      map: [
+        "....k.....",
+        ".BIYk.FI..",
+        ".KI.k.X.N.",
+        ".C..k.....",
+        ".b..k...*.",
+        "....k.....",
+        "....k.....",
+      ],
+    },
+    {
+      name: "第九关：自动行者",
+      hint: "V=MOVE！给石头拼出 ROCK IS MOVE，让它自动向前移动填入深水开辟通路！",
+      map: [
+        "....~.....",
+        ".BIY~FI...",
+        ".OI.~...N.",
+        ".AIZ~.V...",
+        ".b.o~...*.",
+        "....~.....",
+        "....~.....",
+      ],
+    },
+
+    // ===== 第四阶段：大师与综合 =====
+    {
+      name: "第十关：灵魂出窍",
+      hint: "深水阻断了去路且无法填平！把 Y(YOU) 推到 O I 后面组成 ROCK IS YOU，直接控制对岸的石头碰旗！",
+      map: [
+        "....~.....",
+        ".BIY~.FI..",
+        ".OI.~...N.",
+        "....~.....",
+        ".b..~.o.*.",
+        "....~.....",
+        "....~.....",
+      ],
+    },
+    {
+      name: "第十一关：绝处逢生",
+      hint: "多重障碍：先拆开 WALL IS STOP 穿过墙壁，再推石头填平深水河，最后拼出 FLAG IS WIN 通关！",
+      map: [
+        "....#.~.....",
+        ".BIY#.~.FI..",
+        ".WIS#.~...N.",
+        ".OIP#.~.AIZ.",
+        ".b..#.~...*.",
+        "....#.o.....",
+        "....#.~.....",
+      ],
+    },
+    {
+      name: "第十二关：终极试炼",
+      hint: "终极挑战：把 O(ROCK) 拼到 WIS 后面组成 WALL IS ROCK 将整面墙变为石头，再推石头填水开路，最后拼 FLAG IS WIN 碰旗！",
+      map: [
+        "....#.~.....",
+        ".BIY#.~.FI..",
+        ".WIS#.~...N.",
+        ".OIP#.~.AIZ.",
+        ".b..#.~...*.",
+        "....#.~.....",
+        "....#.~.....",
+      ],
+    },
+  ];
+});
+</script>
+  <script>
+/* Baba Is You — Canvas 渲染（浏览器端） */
+(function () {
+  "use strict";
+  const BIY = window.BIY;
+
+  const OBJECT_STYLE = {
+    BABA: { emoji: "🐰", color: "#f6f3ee", stroke: "#2a2a2a" },
+    WALL: { emoji: "🧱", color: "#7d8590", stroke: "#3a3f47" },
+    FLAG: { emoji: "🚩", color: "#ff5b6e", stroke: "#a02a3a" },
+    ROCK: { emoji: "🪨", color: "#b08968", stroke: "#6e4f37" },
+    WATER: { emoji: "💧", color: "#4aa3ff", stroke: "#1c5fae" },
+    SKULL: { emoji: "💀", color: "#e9e9ee", stroke: "#8a8a8a" },
+    TREE: { emoji: "🌲", color: "#3fa34d", stroke: "#1f5e2a" },
+    DOOR: { emoji: "🚪", color: "#c08a4a", stroke: "#7a5226" },
+    KEY: { emoji: "🔑", color: "#ffd86b", stroke: "#a9821f" },
+  };
+
+  const TEXT_COLOR = {
+    NOUN: "#e0b97d",
+    VERB: "#f4f4f4",
+    PROPERTY: "#7ee0a0",
+    PREFIX: "#c0a0ff",
+  };
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  // 计算网格布局（在画布内居中，使用逻辑坐标）
+  function layout(state, canvas) {
+    const W = canvas._logical || canvas.width;
+    const H = canvas._logical || canvas.height;
+    const pad = 18;
+    const avail = Math.min(W, H) - pad * 2;
+    const cell = Math.max(24, Math.floor(avail / Math.max(state.w, state.h)));
+    const ox = Math.floor((W - cell * state.w) / 2);
+    const oy = Math.floor((H - cell * state.h) / 2);
+    return { cell, ox, oy, W, H };
+  }
+
+  function draw(ctx, state, canvas, t) {
+    const { cell, ox, oy, W, H } = layout(state, canvas);
+    ctx.clearRect(0, 0, W, H);
+
+    // 背景
+    ctx.fillStyle = "#11131a";
+    ctx.fillRect(0, 0, W, H);
+
+    // 棋盘格
+    for (let y = 0; y < state.h; y++) {
+      for (let x = 0; x < state.w; x++) {
+        ctx.fillStyle = (x + y) % 2 === 0 ? "#181b24" : "#15171f";
+        ctx.fillRect(ox + x * cell, oy + y * cell, cell, cell);
+      }
+    }
+
+    // 计算属性用于高亮
+    const isYou = (e) => BIY.hasProp(state, e, "YOU");
+    const isWin = (e) => BIY.hasProp(state, e, "WIN");
+
+    // 先画物体，再画文本（文本在上层）
+    const objects = state.entities.filter((e) => e.category === "object");
+    const texts = state.entities.filter((e) => e.category === "text");
+
+    for (const e of objects) {
+      const px = ox + e.x * cell, py = oy + e.y * cell;
+      const st = OBJECT_STYLE[e.noun] || { emoji: "❓", color: "#888", stroke: "#444" };
+      // 底色块
+      roundRect(ctx, px + 2, py + 2, cell - 4, cell - 4, 8);
+      ctx.fillStyle = st.color;
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = st.stroke;
+      ctx.stroke();
+      // 表情
+      ctx.font = Math.floor(cell * 0.6) + "px serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(st.emoji, px + cell / 2, py + cell / 2 + 1);
+      // YOU 高亮
+      if (isYou(e)) {
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "#ffe14a";
+        roundRect(ctx, px + 2, py + 2, cell - 4, cell - 4, 8);
+        ctx.stroke();
+      }
+      // WIN 脉冲
+      if (isWin(e)) {
+        const a = 0.4 + 0.4 * Math.abs(Math.sin(t / 350));
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "rgba(120,255,150," + a.toFixed(2) + ")";
+        roundRect(ctx, px + 2, py + 2, cell - 4, cell - 4, 8);
+        ctx.stroke();
+      }
+    }
+
+    for (const e of texts) {
+      const px = ox + e.x * cell, py = oy + e.y * cell;
+      const col = TEXT_COLOR[e.cat] || "#ccc";
+      // 文本块：深色底 + 彩色边 + 文字
+      roundRect(ctx, px + 2, py + 2, cell - 4, cell - 4, 6);
+      ctx.fillStyle = "#0c0e14";
+      ctx.fill();
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = col;
+      ctx.stroke();
+      ctx.fillStyle = col;
+      ctx.font = "bold " + Math.floor(cell * 0.34) + "px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(e.word, px + cell / 2, py + cell / 2 + 1);
+    }
+  }
+
+  window.BIY_RENDER = { draw, layout, OBJECT_STYLE, TEXT_COLOR };
+})();
+
+</script>
+  <script>
+/* Baba Is You — 主程序：输入 / 关卡管理 / 撤销 / UI（浏览器端） */
+(function () {
+  "use strict";
+  const BIY = window.BIY;
+  const LEVELS = window.BIY_LEVELS;
+  const RENDER = window.BIY_RENDER;
+
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  const elName = document.getElementById("levelName");
+  const elHint = document.getElementById("hint");
+  const elRules = document.getElementById("rules");
+  const elStatus = document.getElementById("status");
+  const overlay = document.getElementById("overlay");
+  const overlayTitle = document.getElementById("overlayTitle");
+  const overlayMsg = document.getElementById("overlayMsg");
+  const levelList = document.getElementById("levelList");
+
+  // 画布逻辑尺寸（按 DPR 放大保证清晰）
+  const SIZE = 720;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = SIZE * dpr;
+  canvas.height = SIZE * dpr;
+  canvas.style.width = "min(72vh, 720px)";
+  canvas.style.height = "min(72vh, 720px)";
+  ctx.scale(dpr, dpr);
+  // 之后绘制使用逻辑坐标（0..SIZE）
+  canvas._logical = SIZE;
+
+  let levelIndex = 0;
+  let state = null;
+  let history = [];
+
+  function loadLevel(i) {
+    levelIndex = (i + LEVELS.length) % LEVELS.length;
+    state = BIY.loadLevel(LEVELS[levelIndex]);
+    history = [];
+    hideOverlay();
+    updateHUD();
+  }
+  function restart() { loadLevel(levelIndex); }
+  function undo() {
+    if (history.length === 0) return;
+    state = history.pop();
+    BIY.computeRules(state);
+    hideOverlay();
+    updateHUD();
+  }
+  function nextLevel() {
+    if (levelIndex < LEVELS.length - 1) loadLevel(levelIndex + 1);
+    else showOverlay("🎉 全部通关！", "你已通关全部 " + LEVELS.length + " 关。按 R 重玩本关。", false);
+  }
+  function selectLevel(i) { loadLevel(i); toggleLevelSelect(false); }
+
+  function updateHUD() {
+    elName.textContent = "第 " + (levelIndex + 1) + " 关 · " + state.name;
+    elHint.textContent = state.hint;
+    const rs = BIY.activeRuleStrings(state);
+    elRules.innerHTML = "";
+    if (rs.length === 0) {
+      const span = document.createElement("span");
+      span.className = "chip chip-none";
+      span.textContent = "（暂无生效规则）";
+      elRules.appendChild(span);
+    }
+    for (const r of rs) {
+      const span = document.createElement("span");
+      span.className = "chip";
+      span.textContent = r;
+      elRules.appendChild(span);
+    }
+    elStatus.textContent = state.status === "playing" ? "" : state.status;
+  }
+
+  function showOverlay(title, msg, canNext) {
+    overlayTitle.textContent = title;
+    overlayMsg.textContent = msg;
+    overlay.classList.remove("hidden");
+    overlay.classList.toggle("can-next", !!canNext);
+  }
+  function hideOverlay() { overlay.classList.add("hidden"); }
+
+  // 玩家移动
+  function move(dir) {
+    if (!state || state.status !== "playing") return;
+    history.push(BIY.cloneState(state));
+    if (history.length > 300) history.shift();
+    BIY.applyInput(state, dir);
+    updateHUD();
+    if (state.status === "won") {
+      recordClear(levelIndex + 1, history.length);   // history.length 即本关步数
+      markClearedButtons();
+      const last = levelIndex === LEVELS.length - 1;
+      showOverlay(
+        "🎉 过关！",
+        last ? "这是最后一关。按 N 查看通关画面，R 重玩。" : "按 → / N 进入下一关，R 重玩，Z 撤销。",
+        !last
+      );
+    } else if (state.status === "lost") {
+      showOverlay("💀 失败", "你消失了。按 R 重开，Z 撤销一步。", false);
+    }
+  }
+
+  // ---------- 本机战绩（localStorage） ----------
+  const REC_KEY = "biy_records";
+  function loadRec() {
+    try { return JSON.parse(localStorage.getItem(REC_KEY) || "{}") || {}; }
+    catch (e) { return {}; }
+  }
+  // levelNo 从 1 起算，steps 为本关步数（每次重开都会刷新，记录的是历史最好步数）
+  function recordClear(levelNo, steps) {
+    const r = loadRec();
+    r.clears = (r.clears || 0) + 1;
+    r.maxLevel = Math.max(r.maxLevel || 0, levelNo);
+    r.bestSteps = r.bestSteps || {};
+    const prev = r.bestSteps[levelNo];
+    if (!prev || steps < prev) r.bestSteps[levelNo] = steps;
+    try { localStorage.setItem(REC_KEY, JSON.stringify(r)); } catch (e) {}
+    return r;
+  }
+  function recHTML(r) {
+    if (!r || !r.clears) return '<span class="empty">还没有通关记录</span>';
+    return '<div class="rec best"><div class="rk">已通关</div><div class="rv">' +
+             (r.maxLevel || 0) + "/" + LEVELS.length + '</div></div>' +
+           '<div class="rec"><div class="rk">累计过关</div><div class="rv">' + r.clears + '</div></div>';
+  }
+  function renderRecords() {
+    const el = document.getElementById("biyRecords");
+    if (el) el.innerHTML = recHTML(loadRec());
+  }
+  // 关卡选择面板里给已通关的关卡打勾并标注最少步数
+  function markClearedButtons() {
+    const r = loadRec();
+    const best = r.bestSteps || {};
+    document.querySelectorAll(".lvBtn").forEach((btn, i) => {
+      const no = i + 1;
+      btn.textContent = (best[no] ? "✅ " : "") + no + ". " + LEVELS[i].name + (best[no] ? "（" + best[no] + " 步）" : "");
+    });
+  }
+
+  // 键盘
+  const KEYMAP = {
+    ArrowUp: { x: 0, y: -1 }, ArrowDown: { x: 0, y: 1 },
+    ArrowLeft: { x: -1, y: 0 }, ArrowRight: { x: 1, y: 0 },
+    w: { x: 0, y: -1 }, s: { x: 0, y: 1 }, a: { x: -1, y: 0 }, d: { x: 1, y: 0 },
+  };
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "r" || e.key === "R") { restart(); e.preventDefault(); return; }
+    if (e.key === "z" || e.key === "Z" || e.key === "u" || e.key === "U") { undo(); e.preventDefault(); return; }
+    if ((e.key === "n" || e.key === "N" || e.key === " " || e.key === "Enter") && state && state.status === "won") {
+      nextLevel(); e.preventDefault(); return;
+    }
+    const dir = KEYMAP[e.key];
+    if (dir) { move(dir); e.preventDefault(); }
+  });
+
+  // 触屏滑动
+  let ts = null;
+  canvas.addEventListener("pointerdown", (e) => { ts = { x: e.clientX, y: e.clientY }; });
+  canvas.addEventListener("pointerup", (e) => {
+    if (!ts) return;
+    const dx = e.clientX - ts.x, dy = e.clientY - ts.y;
+    ts = null;
+    if (Math.hypot(dx, dy) < 24) return;
+    if (Math.abs(dx) > Math.abs(dy)) move({ x: dx > 0 ? 1 : -1, y: 0 });
+    else move({ x: 0, y: dy > 0 ? 1 : -1 });
+  });
+
+  // 关卡选择
+  function buildLevelList() {
+    levelList.innerHTML = "";
+    LEVELS.forEach((lv, i) => {
+      const b = document.createElement("button");
+      b.className = "lvBtn";
+      b.textContent = (i + 1) + ". " + lv.name;
+      b.onclick = () => selectLevel(i);
+      levelList.appendChild(b);
+    });
+  }
+  const selPanel = document.getElementById("levelSelect");
+  function toggleLevelSelect(force) {
+    const show = force !== undefined ? force : selPanel.classList.contains("hidden");
+    selPanel.classList.toggle("hidden", !show);
+  }
+  document.getElementById("btnLevels").onclick = () => toggleLevelSelect();
+  document.getElementById("btnRestart").onclick = restart;
+  document.getElementById("btnUndo").onclick = undo;
+  document.getElementById("btnNext").onclick = () => { if (state && state.status === "won") nextLevel(); };
+  document.getElementById("ovNext").onclick = nextLevel;
+  document.getElementById("ovRestart").onclick = restart;
+  // 方向键按钮（移动端）
+  document.getElementById("padUp").onclick = () => move({ x: 0, y: -1 });
+  document.getElementById("padDown").onclick = () => move({ x: 0, y: 1 });
+  document.getElementById("padLeft").onclick = () => move({ x: -1, y: 0 });
+  document.getElementById("padRight").onclick = () => move({ x: 1, y: 0 });
+
+  // 渲染循环（持续绘制以支持脉冲动画）
+  function frame(t) {
+    if (state) RENDER.draw(ctx, state, canvas, t);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  buildLevelList();
+  markClearedButtons();
+  renderRecords();
+  loadLevel(0);
+})();
+
+</script>
+</body>
+</html>

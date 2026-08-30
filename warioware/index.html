@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>WarioWare 式 microgame 合集</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="game">
+    <canvas id="cv"></canvas>
+
+    <!-- 顶部 HUD -->
+    <div id="hud">
+      <div class="hud-left">
+        <span id="lives">❤️❤️❤️❤️</span>
+      </div>
+      <div class="hud-right">
+        <span id="combo">连胜 0</span>
+        <span id="best">最佳 0</span>
+      </div>
+    </div>
+
+    <!-- 倒计时圆环 -->
+    <svg id="ring" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="44" class="ring-bg" />
+      <circle cx="50" cy="50" r="44" class="ring-fg" id="ringFg" />
+    </svg>
+
+    <!-- 开始 / 结束 -->
+    <div id="menu" class="overlay">
+      <h1>MICROGAME 大合集</h1>
+      <p class="sub">一连串 5 秒小游戏，越快越疯！</p>
+      <p class="tip">电脑：方向键/WASD + 鼠标点击/狂按空格</p>
+      <p class="tip">手机：拖动屏幕移动 + 点屏幕操作</p>
+      <div id="wwRecords" class="records"></div>
+      <button id="startBtn">开始</button>
+      <a class="back-home" href="../index.html">← 返回游戏列表</a>
+    </div>
+
+    <div id="gameover" class="overlay hidden">
+      <h1>游戏结束</h1>
+      <div id="goStats"></div>
+      <div id="wwRecordsOver" class="records"></div>
+      <button id="retryBtn">再来一局</button>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Wordle 猜词</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>WORDLE</h1>
+      <div class="stats-line" id="stats-line">已玩 <b id="stat-played">0</b> · 胜率 <b id="stat-win">0%</b> · 连胜 <b id="stat-streak">0</b> · 最长 <b id="stat-maxstreak">0</b></div>
+      <div id="dist" class="dist"></div>
+    </header>
+
+    <div id="message" class="message"></div>
+
+    <div id="board" class="board"></div>
+
+    <div id="keyboard" class="keyboard"></div>
+    <a class="back-home" href="../index.html">← 返回游戏列表</a>
+  </div>
+  <script src="words.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Peglin · 弹珠肉鸽 (Deluxe)</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="game">
+    <!-- 顶部状态栏 -->
+    <div id="topbar">
+      <div class="player-hud">
+        <div class="avatar">🧌</div>
+        <div class="hp-box">
+          <div class="hp-bar"><div id="php"></div></div>
+          <span id="ptext">50/50</span>
+        </div>
+        <div id="pblock" class="block-badge">🛡️ 0</div>
+        <div id="pweak" class="weak-badge hidden">💧 0</div>
+        <div id="gold" class="gold-badge">🪙 15</div>
+      </div>
+      <div class="floor-hud">
+        <span id="floor">第 1 层 · 迷雾森林</span>
+      </div>
+      <div class="right-hud">
+        <div id="pegStock" class="peg-stock" title="特殊钉配额：每通过一层随机解锁 1 颗，每种上限 10"></div>
+        <div id="relicsBar" class="relics-bar"></div>
+        <button id="btnEndRun" class="btn-end" type="button" title="结束本次冒险并直接结算">🏁 结束</button>
+      </div>
+    </div>
+
+    <!-- 战斗舞台（敌人与意图） -->
+    <div id="battleStage">
+      <div id="enemiesContainer"></div>
+    </div>
+
+    <!-- 弹珠队列 & 当前伤害统计 -->
+    <div id="orbQueueBar">
+      <div class="current-orb-panel">
+        <div class="label">当前弹珠</div>
+        <div id="curOrbBadge" class="orb-badge">⚪ 圆石弹</div>
+      </div>
+      <div id="dmgMeter" class="dmg-meter">
+        <div class="label">本轮累积伤害</div>
+        <div id="dmgValue" class="val">0</div>
+        <div id="critBadge" class="crit-badge hidden">💥 暴击 x2.5!</div>
+      </div>
+      <div class="next-orbs-panel">
+        <div class="label">后续序列</div>
+        <div id="nextOrbsList" class="next-list"></div>
+      </div>
+      <button id="btnDiscard" class="btn-discard" title="丢弃当前弹珠（本轮换下一个）">🔄 换球 (<span id="discardCount">1</span>)</button>
+    </div>
+
+    <!-- 弹珠台画布 -->
+    <canvas id="cv"></canvas>
+
+    <div id="aimHint">从顶部拖动瞄准，松开发射弹珠！击中 🔄 刷新全部钉子，击中 💣 引爆范围，击中 💥 触发暴击！</div>
+
+    <!-- 战斗胜利奖励结算 -->
+    <div id="upgrade" class="overlay hidden">
+      <h2 id="rewardTitle">战斗胜利！选择一项战利品</h2>
+      <div id="rewardUnlock" class="unlock-note"></div>
+      <div id="upgradeCards"></div>
+      <button id="skipRewardBtn" class="btn-secondary">跳过奖励</button>
+    </div>
+
+    <!-- 商店界面 -->
+    <div id="shopOverlay" class="overlay hidden">
+      <h2>🪙 森林地精商店</h2>
+      <div id="shopUnlock" class="unlock-note"></div>
+      <div id="shopItems"></div>
+      <button id="leaveShopBtn">离开商店</button>
+    </div>
+
+    <!-- 主菜单 -->
+    <div id="menu" class="overlay">
+      <div class="menu-box">
+        <h1>PEGLIN</h1>
+        <div class="badge">弹珠肉鸽 · 豪华重构版</div>
+        <p class="sub">重力弹珠 + 牌库构筑 + 遗物流派！击碎钉子，引发连锁爆炸，击溃地牢强敌！</p>
+        <div class="rules">
+          <p>🎯 <b>从顶部瞄准向下发射</b>，让弹珠在钉子间疯狂弹跳积累攻击力！</p>
+          <p>💣 <b>击中炸弹钉两次引爆</b>，直接对全屏敌人造成 50 点爆破伤害！</p>
+          <p>🔄 <b>击中刷新钉</b>瞬间重置场上所有钉子，达成无限连击！</p>
+          <p>💥 <b>击中暴击钉</b>本次弹珠攻击跃升为 2.5 倍致命伤害！</p>
+          <p>🔮 <b>构筑特色弹珠</b>：雷电弹、冰霜穿透弹、吸血弹、套娃分裂弹、炸弹生成弹！</p>
+          <p>🧩 <b>特殊钉逐关解锁</b>：开局只有普通钉与金币钉，每通过一层随机解锁 1 颗特殊钉，每种上限 10（共 40 关满配）。</p>
+        </div>
+        <div id="pegRecords" class="records"></div>
+        <button id="startBtn">开始冒险</button>
+        <a class="back-home" href="../index.html">← 返回游戏列表</a>
+      </div>
+    </div>
+
+    <!-- 游戏结束 -->
+    <div id="gameover" class="overlay hidden">
+      <h1 id="goTitle">游戏结束</h1>
+      <div id="goStats"></div>
+      <div id="goRecords" class="records"></div>
+      <button id="retryBtn">再来一局</button>
+      <a class="back-home" href="../index.html">← 返回游戏列表</a>
+    </div>
+  </div>
+
+  <script src="matter.min.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
