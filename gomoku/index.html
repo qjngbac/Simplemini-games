@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>五子棋 · 人机对战</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="wrap">
+  <header class="topbar">
+    <div class="title">五子棋</div>
+    <div class="stats">
+      <span id="status">轮到你</span>
+      <span>难度 <b id="levelName">困难</b></span>
+    </div>
+  </header>
+
+  <div class="stage">
+    <canvas id="game"></canvas>
+
+    <div id="menu" class="overlay">
+      <h1>五子棋</h1>
+      <p class="sub">你执黑先行，先把 5 颗连成一线就赢</p>
+      <div class="diffs">
+        <button class="diff" data-diff="easy">普通（会挡，但看得近）</button>
+        <button class="diff diff-hard" data-diff="hard">困难（会算活三、冲四）</button>
+      </div>
+      <p class="tip">点棋盘落子 · 手机同样点一下就下</p>
+      <div id="gomokuRecords" class="records"></div>
+      <a class="back-home" href="../index.html">← 返回游戏列表</a>
+    </div>
+
+    <div id="over" class="overlay hidden">
+      <h1 id="overTitle">你赢了！</h1>
+      <div id="overStats" class="sub"></div>
+      <div class="btns">
+        <button id="againBtn">再来一局</button>
+        <button id="undoOverBtn" class="ghost">悔棋复盘</button>
+        <button id="backBtn" class="ghost">换个难度</button>
+      </div>
+      <div id="gomokuRecordsOver" class="records"></div>
+      <a class="back-home" href="../index.html">← 返回游戏列表</a>
+    </div>
+  </div>
+
+  <div class="bar">
+    <div id="lastMove" class="last">最近落子 —</div>
+    <div class="bar-btns">
+      <button id="undoBtn" class="ghost">悔棋</button>
+      <button id="newBtn" class="ghost">重开</button>
+    </div>
+  </div>
+  <a class="back-home" href="../index.html">← 返回游戏列表</a>
+</div>
+<script src="game.js"></script>
+</body>
+</html>

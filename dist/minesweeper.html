@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<script>
+/* file:// 下部分浏览器会禁用 localStorage，直接读写会抛 SecurityError 导致游戏白屏。
+   这里先探一次，不可用时退化成内存存储：游戏照常玩，只是战绩不落盘。 */
+(function () {
+  try { localStorage.setItem('__probe__', '1'); localStorage.removeItem('__probe__'); return; } catch (e) {}
+  var mem = {};
+  try {
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: function (k) { return Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null; },
+        setItem: function (k, v) { mem[k] = String(v); },
+        removeItem: function (k) { delete mem[k]; },
+        clear: function () { mem = {}; },
+        key: function (i) { var ks = Object.keys(mem); return i < ks.length ? ks[i] : null; },
+        get length() { return Object.keys(mem).length; }
+      }
+    });
+  } catch (e2) {}
+})();
+</script>
+
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>扫雷 Minesweeper</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  min-height: 100%;
+  background: radial-gradient(circle at 50% 0%, #233a2c, #0a0d18 62%);
+  color: #eef2ff;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  user-select: none; -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.wrap { max-width: 900px; margin: 0 auto; padding: 14px 12px 30px; display: flex; flex-direction: column; align-items: center; }
+
+.topbar { width: 100%; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.title { font-size: 22px; font-weight: 900; letter-spacing: 1px; color: #5bff9b; }
+.stats { display: flex; gap: 14px; font-size: 13px; color: #9aa6d6; }
+.stats b { color: #eef2ff; font-size: 16px; }
+
+#boardWrap { position: relative; margin-top: 14px; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+#board { display: grid; gap: 2px; background: #10131f; padding: 6px; border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.5); width: max-content; margin: 0 auto; }
+
+.cell {
+  width: 26px; height: 26px; border-radius: 4px; cursor: pointer;
+  background: linear-gradient(180deg, #3a4463, #2b3350);
+  color: #fff; font-size: 14px; font-weight: 800; line-height: 26px; text-align: center;
+  border: none; padding: 0; font-family: inherit;
+}
+.cell:active { transform: scale(.94); }
+.cell.shown { background: #1a2035; cursor: default; }
+.cell.flag { background: linear-gradient(180deg, #6b4a2a, #4d341c); }
+.cell.mine { background: linear-gradient(180deg, #ff6b6b, #b02a2a); }
+.cell.boom { background: #ff3b3b; }
+.cell.n1 { color: #7ecbff; } .cell.n2 { color: #5bff9b; } .cell.n3 { color: #ff8a5b; }
+.cell.n4 { color: #b18cff; } .cell.n5 { color: #ffd86b; } .cell.n6 { color: #6ee7ff; }
+.cell.n7 { color: #fff; }     .cell.n8 { color: #c7d0f5; }
+body.big #board .cell { width: 22px; height: 22px; font-size: 12px; line-height: 22px; }
+
+.overlay {
+  position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: rgba(10,11,26,.93); color: #eef2ff; text-align: center; padding: 20px 14px; z-index: 100;
+  overflow-y: auto;
+}
+.overlay.hidden { display: none !important; }
+.overlay h1 { font-size: 30px; margin-bottom: 8px; letter-spacing: 1px; color: #5bff9b; }
+.sub { color: #9aa6d6; margin-bottom: 14px; font-size: 14px; }
+.tip { color: #7e8bbf; font-size: 12px; margin: 3px 0; max-width: 440px; line-height: 1.6; }
+.diffs { display: flex; flex-direction: column; gap: 10px; margin: 10px 0 14px; width: 100%; max-width: 280px; }
+.diffs .diff {
+  margin-top: 0; width: 100%; padding: 12px 20px; font-size: 15px; font-weight: 800;
+  color: #12132a; background: linear-gradient(90deg, #5bff9b, #7ecbff); border: none; border-radius: 24px; cursor: pointer;
+  white-space: nowrap; box-shadow: 0 4px 14px rgba(91, 255, 155, 0.25);
+}
+.diffs .diff:active { transform: scale(.97); }
+button { margin-top: 14px; padding: 11px 26px; font-size: 16px; font-weight: 800; color: #12132a;
+  background: linear-gradient(90deg, #5bff9b, #7ecbff); border: none; border-radius: 24px; cursor: pointer; }
+button:active { transform: scale(.97); }
+.btns { display: flex; gap: 10px; }
+button.ghost { background: rgba(30,36,62,.9); color: #cdd6ff; border: 1px solid #333b63; font-size: 14px; padding: 9px 18px; }
+button.ghost:active { background: #2f6df0; color: #fff; }
+.ctrl { display: flex; gap: 10px; margin-top: 14px; }
+#resultStats { color: #c7d0f5; font-size: 15px; line-height: 1.8; }
+#resultStats b { color: #5bff9b; }
+
+/* 历史战绩 */
+.records { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 14px 0 0; }
+.records .rec {
+  background: rgba(24,26,50,.9); border: 1px solid #2e3558;
+  border-radius: 10px; padding: 6px 12px; min-width: 78px; text-align: center;
+}
+.records .rec .rk { font-size: 10px; color: #7e8bbf; font-weight: 700; }
+.records .rec .rv { font-size: 15px; font-weight: 900; color: #eef2ff; }
+.records .rec.best .rv { color: #5bff9b; }
+.records .empty { font-size: 12px; color: #7e8bbf; }
+
+.back-home {
+  display: inline-block; margin-top: 14px; font-size: 12px; color: #9aa6d6;
+  text-decoration: none; border-bottom: 1px dashed #4a5580; padding-bottom: 1px;
+}
+.back-home:hover { color: #eef2ff; }
+
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="topbar">
+    <div class="title">扫雷</div>
+    <div class="stats">
+      <span>💣 <b id="mineLeft">10</b></span>
+      <span>⏱ <b id="timer">00:00</b></span>
+      <span>难度 <b id="levelName">初级</b></span>
+    </div>
+  </header>
+
+  <div id="boardWrap">
+    <div id="board"></div>
+
+    <!-- 菜单 -->
+    <div id="menu" class="overlay">
+      <h1>扫雷</h1>
+      <p class="sub">点开所有非雷格子就算通关</p>
+      <div class="diffs">
+        <button class="diff" data-diff="easy">初级 9×9 · 10 雷</button>
+        <button class="diff" data-diff="mid">中级 16×16 · 40 雷</button>
+        <button class="diff" data-diff="exp">专家 30×16 · 99 雷</button>
+      </div>
+      <p class="tip">左键翻开 · 右键插旗 · 数字上双击可"一键展开"</p>
+      <p class="tip">手机：点一下翻开，长按 0.4 秒插旗（或开"🚩 插旗模式"）</p>
+      <div id="minesRecords" class="records"></div>
+      <a class="back-home" href="index.html">← 返回游戏列表</a>
+    </div>
+
+    <!-- 结束 -->
+    <div id="result" class="overlay hidden">
+      <h1 id="resultTitle">💥 踩雷了</h1>
+      <div id="resultStats" class="sub"></div>
+      <div class="btns">
+        <button id="retryBtn">再来一局</button>
+        <button id="changeBtn" class="ghost">换个难度</button>
+      </div>
+      <div id="minesRecordsOver" class="records"></div>
+      <a class="back-home" href="index.html">← 返回游戏列表</a>
+    </div>
+  </div>
+
+  <div class="ctrl">
+    <button id="newBtn" class="ghost">重开</button>
+    <button id="flagBtn" class="ghost">🚩 插旗模式：关</button>
+  </div>
+  <a class="back-home" href="index.html">← 返回游戏列表</a>
+</div>
+<script>
+// 扫雷 Minesweeper —— 纯前端 DOM 实现
+(function () {
+  "use strict";
+
+  const LEVELS = {
+    easy: { w: 9,  h: 9,  m: 10, name: "初级" },
+    mid:  { w: 16, h: 16, m: 40, name: "中级" },
+    exp:  { w: 30, h: 16, m: 99, name: "专家" },
+  };
+
+  const boardEl = document.getElementById("board");
+  let cfg = LEVELS.easy, diff = "easy";
+  let cells = [], els = [];
+  let state = "menu";          // menu | playing | over | win
+  let minesPlaced = false, flags = 0, shownCount = 0;
+  let startTime = 0, elapsed = 0, tick = null;
+  let flagMode = false;
+
+  // ---------- 棋盘 ----------
+  function idx(x, y) { return y * cfg.w + x; }
+  function neighbors(i) {
+    const x = i % cfg.w, y = (i - x) / cfg.w, out = [];
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= cfg.w || ny >= cfg.h) continue;
+        out.push(idx(nx, ny));
+      }
+    }
+    return out;
+  }
+
+  function newGame(d) {
+    if (state === "playing" && minesPlaced && shownCount > 0 && !runSubmitted) {
+      submitRun(false);
+    }
+    runSubmitted = false;
+    diff = d || diff;
+    cfg = LEVELS[diff];
+    cells = [];
+    els = [];
+    flags = 0; shownCount = 0; minesPlaced = false; elapsed = 0; startTime = 0;
+    if (tick) { clearInterval(tick); tick = null; }
+    state = "playing";
+
+    boardEl.innerHTML = "";
+    const cellSize = cfg.w >= 16 ? 22 : 26;
+    boardEl.style.gridTemplateColumns = `repeat(${cfg.w}, ${cellSize}px)`;
+    // 专家盘与中级盘较宽，整体上小一号
+    document.body.classList.toggle("big", cfg.w >= 16);
+
+    for (let i = 0; i < cfg.w * cfg.h; i++) {
+      cells.push({ mine: false, near: 0, shown: false, flag: false });
+      const el = document.createElement("div");
+      el.className = "cell";
+      boardEl.appendChild(el);
+      els.push(el);
+      bindCell(i, el);
+    }
+    document.getElementById("menu").classList.add("hidden");
+    document.getElementById("result").classList.add("hidden");
+    document.getElementById("levelName").textContent = cfg.name;
+    updateHUD();
+  }
+
+  function bindCell(i, el) {
+    let lp = null, longFired = false;
+    // 左键翻开 / 右键插旗 / 双击数字一键展开
+    el.addEventListener("click", () => {
+      // 长按插旗之后浏览器还会补一个 click —— 这个 click 不能再把格子翻开，
+      // 否则刚插上的旗会被自己那一按立刻翻掉
+      if (longFired) { longFired = false; return; }
+      if (state !== "playing") return;
+      if (flagMode) toggleFlag(i); else reveal(i);
+    });
+    el.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      if (state === "playing") toggleFlag(i);
+    });
+    el.addEventListener("dblclick", () => {
+      if (state === "playing") chord(i);
+    });
+
+    // 长按 0.4 秒插旗（手机上没有右键）
+    el.addEventListener("pointerdown", () => {
+      longFired = false;
+      lp = setTimeout(() => {
+        longFired = true;
+        if (state === "playing") toggleFlag(i);
+      }, 400);
+    });
+    const cancel = () => { if (lp) { clearTimeout(lp); lp = null; } };
+    el.addEventListener("pointerup", cancel);
+    el.addEventListener("pointercancel", cancel);
+    el.addEventListener("pointerleave", cancel);
+  }
+
+  // 第一次点击后才布雷：保证首点一定不是雷，而且首点周围一圈也是安全的
+  // （标准的"first click safe"，否则开局就得靠运气）
+  function placeMines(safe) {
+    const banned = new Set([safe].concat(neighbors(safe)));
+    const pool = [];
+    for (let i = 0; i < cells.length; i++) if (!banned.has(i)) pool.push(i);
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    for (let k = 0; k < Math.min(cfg.m, pool.length); k++) cells[pool[k]].mine = true;
+    for (let i = 0; i < cells.length; i++) {
+      if (cells[i].mine) continue;
+      cells[i].near = neighbors(i).filter(n => cells[n].mine).length;
+    }
+    minesPlaced = true;
+  }
+
+  function paint(i) {
+    const c = cells[i], el = els[i];
+    let cls = "cell";
+    let txt = "";
+    if (c.flag && !c.shown) { cls += " flag"; txt = "🚩"; }
+    else if (c.shown) {
+      cls += " shown";
+      if (c.mine) { cls += " mine"; txt = "💣"; }
+      else if (c.near > 0) { cls += " n" + c.near; txt = String(c.near); }
+    }
+    // 踩到的那颗雷单独标红
+    if (c.boom) cls += " boom";
+    el.className = cls;
+    el.textContent = txt;
+  }
+
+  function updateHUD() {
+    document.getElementById("mineLeft").textContent = cfg.m - flags;
+    document.getElementById("timer").textContent = fmt(elapsed);
+  }
+  function fmt(sec) {
+    sec = Math.max(0, Math.floor(sec));
+    return String(Math.floor(sec / 60)).padStart(2, "0") + ":" + String(sec % 60).padStart(2, "0");
+  }
+
+  function startTimer() {
+    if (tick) return;
+    startTime = Date.now();
+    tick = setInterval(() => {
+      elapsed = (Date.now() - startTime) / 1000;
+      updateHUD();
+    }, 250);
+  }
+
+  function toggleFlag(i) {
+    const c = cells[i];
+    if (c.shown) return;
+    c.flag = !c.flag;
+    flags += c.flag ? 1 : -1;
+    paint(i);
+    updateHUD();
+  }
+
+  function reveal(start) {
+    const c = cells[start];
+    if (c.shown || c.flag) return;
+    if (!minesPlaced) { placeMines(start); startTimer(); }
+
+    if (c.mine) { c.boom = true; paint(start); lose(); return; }
+
+    // 空白格（near=0）要自动向外扩散，用显式栈避免递归爆栈
+    const stack = [start];
+    while (stack.length) {
+      const i = stack.pop();
+      const cc = cells[i];
+      if (cc.shown || cc.flag || cc.mine) continue;
+      cc.shown = true;
+      shownCount++;
+      paint(i);
+      if (cc.near === 0) {
+        for (const n of neighbors(i)) if (!cells[n].shown && !cells[n].flag) stack.push(n);
+      }
+    }
+    updateHUD();
+    checkWin();
+  }
+
+  // 数字上双击：周围旗数够了就把其余邻格一次翻开（chord）
+  function chord(i) {
+    const c = cells[i];
+    if (!c.shown || c.near <= 0) return;
+    const ns = neighbors(i);
+    if (ns.filter(n => cells[n].flag).length !== c.near) return;
+    for (const n of ns) if (!cells[n].flag && !cells[n].shown) reveal(n);
+  }
+
+  function revealAll() {
+    for (let i = 0; i < cells.length; i++) {
+      if (cells[i].mine) { cells[i].shown = true; paint(i); }
+    }
+  }
+
+  function checkWin() {
+    if (state !== "playing") return;
+    if (shownCount === cells.length - cfg.m || shownCount >= cells.length) win();
+  }
+
+  function stopTimer() { if (tick) { clearInterval(tick); tick = null; } }
+
+  function lose() {
+    state = "over";
+    stopTimer();
+    revealAll();
+    document.getElementById("resultTitle").textContent = "💥 踩雷了";
+    document.getElementById("resultStats").innerHTML = `坚持了 <b>${fmt(elapsed)}</b>　翻开 ${shownCount} 格`;
+    document.getElementById("minesRecordsOver").innerHTML = recHTML(submitRun(false));
+    document.getElementById("result").classList.remove("hidden");
+  }
+
+  function win() {
+    state = "win";
+    stopTimer();
+    // 通关自动把剩下的雷都插上旗，方便玩家看结果
+    for (let i = 0; i < cells.length; i++) {
+      if (cells[i].mine && !cells[i].flag) { cells[i].flag = true; flags++; paint(i); }
+    }
+    updateHUD();
+    document.getElementById("resultTitle").textContent = "🎉 排雷成功！";
+    document.getElementById("resultStats").innerHTML = `${cfg.name}用时 <b>${fmt(elapsed)}</b>`;
+    document.getElementById("minesRecordsOver").innerHTML = recHTML(submitRun(true));
+    document.getElementById("result").classList.remove("hidden");
+  }
+
+  // ---------- 本机战绩（localStorage） ----------
+  const REC_KEY = "mines_records";
+  let runSubmitted = false;
+  function loadRec() {
+    try { return JSON.parse(localStorage.getItem(REC_KEY) || "{}") || {}; }
+    catch (e) { return {}; }
+  }
+  function submitRun(isWin) {
+    if (runSubmitted) return loadRec();
+    runSubmitted = true;
+    const r = loadRec();
+    r.runs = (r.runs || 0) + 1;
+    r.wins = (r.wins || 0) + (isWin ? 1 : 0);
+    r.best = r.best || {};
+    if (isWin) {
+      const prev = r.best[diff];
+      if (!prev || elapsed < prev) r.best[diff] = Math.floor(elapsed);
+    }
+    try { localStorage.setItem(REC_KEY, JSON.stringify(r)); } catch (e) {}
+    renderRecords();
+    return r;
+  }
+  function submitActiveRun() {
+    if (runSubmitted) return;
+    if (state !== "playing" || !minesPlaced || shownCount <= 0) return;
+    submitRun(false);
+  }
+  function bestText(r, key) {
+    const v = (r && r.best && r.best[key]);
+    return v == null ? "—" : fmt(v);
+  }
+  function recHTML(r) {
+    if (!r || !r.runs) return '<span class="empty">还没有战绩，先排一局</span>';
+    return '<div class="rec best"><div class="rk">通关次数</div><div class="rv">' + (r.wins || 0) + '</div></div>' +
+           '<div class="rec"><div class="rk">初级最快</div><div class="rv">' + bestText(r, "easy") + '</div></div>' +
+           '<div class="rec"><div class="rk">中级最快</div><div class="rv">' + bestText(r, "mid") + '</div></div>' +
+           '<div class="rec"><div class="rk">专家最快</div><div class="rv">' + bestText(r, "exp") + '</div></div>' +
+           '<div class="rec"><div class="rk">局数</div><div class="rv">' + r.runs + '</div></div>';
+  }
+  function renderRecords() {
+    const html = recHTML(loadRec());
+    const a = document.getElementById("minesRecords");
+    const b = document.getElementById("minesRecordsOver");
+    if (a) a.innerHTML = html;
+    if (b) b.innerHTML = html;
+  }
+
+  // ---------- 事件 ----------
+  document.querySelectorAll(".diff").forEach((btn) => {
+    btn.addEventListener("click", () => newGame(btn.dataset.diff));
+  });
+  document.getElementById("retryBtn").addEventListener("click", () => newGame());
+  document.getElementById("newBtn").addEventListener("click", () => newGame());
+  document.getElementById("changeBtn").addEventListener("click", () => {
+    state = "menu";
+    document.getElementById("result").classList.add("hidden");
+    document.getElementById("menu").classList.remove("hidden");
+    renderRecords();
+  });
+  document.getElementById("flagBtn").addEventListener("click", (e) => {
+    flagMode = !flagMode;
+    e.currentTarget.textContent = "🚩 插旗模式：" + (flagMode ? "开" : "关");
+  });
+
+  document.querySelectorAll(".back-home").forEach((a) => {
+    a.addEventListener("click", submitActiveRun);
+  });
+  window.addEventListener("beforeunload", submitActiveRun);
+  window.addEventListener("pagehide", submitActiveRun);
+
+  function initBoard() {
+    cfg = LEVELS[diff];
+    const cellSize = cfg.w >= 16 ? 22 : 26;
+    boardEl.innerHTML = "";
+    boardEl.style.gridTemplateColumns = `repeat(${cfg.w}, ${cellSize}px)`;
+    document.body.classList.toggle("big", cfg.w >= 16);
+    cells = [];
+    els = [];
+    for (let i = 0; i < cfg.w * cfg.h; i++) {
+      cells.push({ mine: false, near: 0, shown: false, flag: false });
+      const el = document.createElement("div");
+      el.className = "cell";
+      boardEl.appendChild(el);
+      els.push(el);
+      bindCell(i, el);
+    }
+    updateHUD();
+  }
+
+  initBoard();
+  renderRecords();
+})();
+
+</script>
+</body>
+</html>

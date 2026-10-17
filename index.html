@@ -57,7 +57,7 @@ button.reset {
 <body>
 <div class="wrap">
   <h1>🎮 本机游戏合集</h1>
-  <p class="sub">全部 7 款浏览器小游戏，战绩保存在<b>本机浏览器</b>（localStorage）里，换浏览器或清缓存会丢失。<br>进入任意游戏通关一次，回到这里就能看到最新成绩。</p>
+  <p class="sub">全部 12 款浏览器小游戏，战绩保存在<b>本机浏览器</b>（localStorage）里，换浏览器或清缓存会丢失。<br>进入任意游戏玩一局，回到这里就能看到最新成绩。</p>
 
   <div class="grid" id="grid"></div>
 
@@ -129,7 +129,7 @@ const GAMES = [
     },
   },
   {
-    dir: "wordle", ico: "🔤", name: "Wordle 猜词", tag: "益智 · 每日",
+    dir: "wordle", ico: "🔤", name: "Wordle 猜词", tag: "益智 · 随机词库",
     desc: "6 次机会猜 5 字母英文单词，绿黄灰提示字母位置。",
     key: "wordle_stats",
     rows: r => {
@@ -152,6 +152,62 @@ const GAMES = [
       ["累计过关", r.clears],
     ],
   },
+  // ===== 第二批：经典休闲 =====
+  {
+    dir: "tetris", ico: "🧱", name: "俄罗斯方块", tag: "街机 · 消行",
+    desc: "7-bag 随机袋 + 落点虚影，等级越高落得越快。",
+    key: "tetris_records",
+    rows: r => [
+      ["最高分", r.bestScore, true],
+      ["最高等级", r.bestLevel],
+      ["单次消行", r.bestLines],
+      ["累计消行", r.totalLines],
+    ],
+  },
+  {
+    dir: "snake", ico: "🐍", name: "贪吃蛇", tag: "街机 · 走位",
+    desc: "吃苹果长身体，撞墙或咬到自己就结束，偶尔有限时 ⭐。",
+    key: "snake_records",
+    rows: r => [
+      ["最高分", r.bestScore, true],
+      ["最长", (r.bestLen || 0) + " 节"],
+      ["最久", fmtTime(r.bestTime)],
+      ["局数", r.runs],
+    ],
+  },
+  {
+    dir: "game-2048", ico: "🔢", name: "2048 数字合并", tag: "解谜 · 合并",
+    desc: "方向键把相同数字挤到一起，目标是合出 2048。",
+    key: "g2048_records",
+    rows: r => [
+      ["最高分", r.bestScore, true],
+      ["最大方块", r.bestTile],
+      ["达成 2048", (r.wins || 0) + " 次"],
+      ["局数", r.runs],
+    ],
+  },
+  {
+    dir: "minesweeper", ico: "💣", name: "扫雷", tag: "逻辑 · 推理",
+    desc: "首点必安全，三种难度，支持插旗与一键展开。",
+    key: "mines_records",
+    rows: r => [
+      ["通关次数", r.wins, true],
+      ["初级最快", fmtTime(r.best && r.best.easy)],
+      ["中级最快", fmtTime(r.best && r.best.mid)],
+      ["专家最快", fmtTime(r.best && r.best.exp)],
+    ],
+  },
+  {
+    dir: "gomoku", ico: "⚫", name: "五子棋 · 人机", tag: "棋类 · AI",
+    desc: "你执黑先行，电脑会算冲四与活三，两种难度。",
+    key: "gomoku_records",
+    rows: r => [
+      ["胜", r.wins, true],
+      ["负", r.losses],
+      ["最快获胜", r.fastest ? r.fastest + " 回合" : "—"],
+      ["局数", r.runs],
+    ],
+  },
 ];
 
 // 游戏入口的路径后缀。
@@ -160,7 +216,9 @@ const GAMES = [
 const LINK_SUFFIX = "/index.html";
 
 function fmtTime(sec) {
-  sec = Math.floor(sec || 0);
+  // 没有记录时显示"—"而不是 00:00，免得看起来像真的跑过一局
+  if (sec == null || sec === "" || Number.isNaN(Number(sec))) return "—";
+  sec = Math.floor(sec);
   return String(Math.floor(sec / 60)).padStart(2, "0") + ":" + String(sec % 60).padStart(2, "0");
 }
 function readRec(key) {

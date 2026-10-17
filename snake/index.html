@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>贪吃蛇 Snake</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="wrap">
+  <header class="topbar">
+    <div class="title">贪吃蛇</div>
+    <div class="stats">
+      <span>分数 <b id="score">0</b></span>
+      <span>长度 <b id="len">3</b></span>
+      <span>时间 <b id="timer">00:00</b></span>
+      <button id="pauseBtn" class="pause-btn" title="暂停/继续 (P)">⏸</button>
+    </div>
+  </header>
+
+  <div class="stage">
+    <canvas id="game"></canvas>
+
+    <div id="menu" class="overlay">
+      <h1>贪吃蛇</h1>
+      <p class="sub">吃到 🍎 长身体，撞墙或咬到自己就结束</p>
+      <p class="tip">方向键 / WASD 控制 · P 键暂停 · 手机滑动屏幕</p>
+      <p class="tip">偶尔会出现 ⭐（限时）：吃到 +50 分、长 3 节</p>
+      <div id="snakeRecords" class="records"></div>
+      <button id="startBtn">开始游戏</button>
+      <a class="back-home" href="../index.html">← 返回游戏列表</a>
+    </div>
+
+    <div id="gameover" class="overlay hidden">
+      <h1>蛇没了</h1>
+      <div id="goStats"></div>
+      <div id="snakeRecordsOver" class="records"></div>
+      <button id="retryBtn">再来一局</button>
+      <a class="back-home" href="../index.html">← 返回游戏列表</a>
+    </div>
+  </div>
+
+  <div class="pad">
+    <button class="pad-btn" data-act="up">▲</button>
+    <div class="pad-row">
+      <button class="pad-btn" data-act="left">◀</button>
+      <button class="pad-btn" data-act="down">▼</button>
+      <button class="pad-btn" data-act="right">▶</button>
+    </div>
+  </div>
+  <a class="back-home" href="../index.html">← 返回游戏列表</a>
+</div>
+<script src="game.js"></script>
+</body>
+</html>

@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<script>
+/* file:// 下部分浏览器会禁用 localStorage，直接读写会抛 SecurityError 导致游戏白屏。
+   这里先探一次，不可用时退化成内存存储：游戏照常玩，只是战绩不落盘。 */
+(function () {
+  try { localStorage.setItem('__probe__', '1'); localStorage.removeItem('__probe__'); return; } catch (e) {}
+  var mem = {};
+  try {
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: function (k) { return Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null; },
+        setItem: function (k, v) { mem[k] = String(v); },
+        removeItem: function (k) { delete mem[k]; },
+        clear: function () { mem = {}; },
+        key: function (i) { var ks = Object.keys(mem); return i < ks.length ? ks[i] : null; },
+        get length() { return Object.keys(mem).length; }
+      }
+    });
+  } catch (e2) {}
+})();
+</script>
+
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>2048 数字合并</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  min-height: 100%;
+  background: radial-gradient(circle at 50% 0%, #3a2f1d, #0a0d18 62%);
+  color: #eef2ff;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  user-select: none; -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.wrap { max-width: 440px; margin: 0 auto; padding: 14px 12px 30px; display: flex; flex-direction: column; align-items: center; width: 100%; }
+
+.topbar { width: 100%; display: flex; align-items: center; justify-content: space-between; }
+.title { font-size: 34px; font-weight: 900; letter-spacing: 1px; color: #ffd86b; }
+.scores { display: flex; gap: 8px; }
+.box { background: #2b3350; border-radius: 8px; padding: 6px 14px; text-align: center; min-width: 76px; }
+.box .k { font-size: 10px; color: #a9b3d6; font-weight: 700; }
+.box .v { font-size: 19px; font-weight: 900; color: #fff; }
+
+.bar { width: 100%; display: flex; align-items: center; justify-content: space-between; margin-top: 12px; gap: 8px; }
+.hint { font-size: 12px; color: #9aa6d6; }
+.bar-btns { display: flex; gap: 6px; }
+
+#boardWrap { position: relative; margin-top: 14px; width: 100%; }
+#board {
+  display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(4, 1fr); gap: 10px;
+  background: #1c2237; padding: 10px; border-radius: 12px; width: 100%;
+  aspect-ratio: 1 / 1; box-shadow: 0 12px 40px rgba(0,0,0,.5);
+}
+.cell {
+  border-radius: 8px; background: rgba(255,255,255,.05);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 32px; font-weight: 900; color: #eef2ff;
+  aspect-ratio: 1 / 1; width: 100%; height: 100%;
+  user-select: none;
+}
+@media (max-width: 420px) { .cell { font-size: 24px; } }
+.cell.t2    { background: #eee4da; color: #776e65; }
+.cell.t4    { background: #ede0c8; color: #776e65; }
+.cell.t8    { background: #f2b179; color: #f9f6f2; }
+.cell.t16   { background: #f59563; color: #f9f6f2; }
+.cell.t32   { background: #f67c5f; color: #f9f6f2; }
+.cell.t64   { background: #f65e3b; color: #f9f6f2; }
+.cell.t128  { background: #edcf72; color: #f9f6f2; font-size: 26px; box-shadow: 0 0 10px rgba(237,207,114,.4); }
+.cell.t256  { background: #edcc61; color: #f9f6f2; font-size: 26px; box-shadow: 0 0 12px rgba(237,204,97,.5); }
+.cell.t512  { background: #edc850; color: #f9f6f2; font-size: 26px; box-shadow: 0 0 14px rgba(237,200,80,.6); }
+.cell.t1024 { background: #edc53f; color: #f9f6f2; font-size: 20px; box-shadow: 0 0 16px rgba(237,197,63,.7); }
+.cell.t2048 { background: #edc22e; color: #f9f6f2; font-size: 20px; box-shadow: 0 0 20px rgba(237,194,46,.9); }
+.cell.big   { background: #3c3a32; color: #f9f6f2; font-size: 16px; }
+.cell.new   { animation: pop 0.18s cubic-bezier(0.175, 0.885, 0.32, 1.275) 0.05s backwards; z-index: 2; }
+@keyframes pop { 0% { transform: scale(0); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+
+/* 滑动动画与合并弹跳动画 */
+.cell.slide-r1 { animation: slideR1 0.11s cubic-bezier(0.25, 1, 0.5, 1); z-index: 2; }
+.cell.slide-r2 { animation: slideR2 0.13s cubic-bezier(0.25, 1, 0.5, 1); z-index: 2; }
+.cell.slide-r3 { animation: slideR3 0.15s cubic-bezier(0.25, 1, 0.5, 1); z-index: 2; }
+
+.cell.slide-l1 { animation: slideL1 0.11s cubic-bezier(0.25, 1, 0.5, 1); z-index: 2; }
+.cell.slide-l2 { animation: slideL2 0.13s cubic-bezier(0.25, 1, 0.5, 1); z-index: 2; }
+.cell.slide-l3 { animation: slideL3 0.15s cubic-bezier(0.25, 1, 0.5, 1); z-index: 2; }
+
+.cell.slide-d1 { animation: slideD1 0.11s cubic-bezier(0.25, 1, 0.5, 1); z-index: 2; }
+.cell.slide-d2 { animation: slideD2 0.13s cubic-bezier(0.25, 1, 0.5, 1); z-index: 2; }
+.cell.slide-d3 { animation: slideD3 0.15s cubic-bezier(0.25, 1, 0.5, 1); z-index: 2; }
+
+.cell.slide-u1 { animation: slideU1 0.11s cubic-bezier(0.25, 1, 0.5, 1); z-index: 2; }
+.cell.slide-u2 { animation: slideU2 0.13s cubic-bezier(0.25, 1, 0.5, 1); z-index: 2; }
+.cell.slide-u3 { animation: slideU3 0.15s cubic-bezier(0.25, 1, 0.5, 1); z-index: 2; }
+
+.cell.merged { animation: mergePop 0.18s cubic-bezier(0.175, 0.885, 0.32, 1.275); z-index: 3; }
+
+.cell.slide-r1.merged { animation: slideR1Merge 0.18s cubic-bezier(0.2, 0.8, 0.3, 1); z-index: 3; }
+.cell.slide-r2.merged { animation: slideR2Merge 0.18s cubic-bezier(0.2, 0.8, 0.3, 1); z-index: 3; }
+.cell.slide-r3.merged { animation: slideR3Merge 0.18s cubic-bezier(0.2, 0.8, 0.3, 1); z-index: 3; }
+
+.cell.slide-l1.merged { animation: slideL1Merge 0.18s cubic-bezier(0.2, 0.8, 0.3, 1); z-index: 3; }
+.cell.slide-l2.merged { animation: slideL2Merge 0.18s cubic-bezier(0.2, 0.8, 0.3, 1); z-index: 3; }
+.cell.slide-l3.merged { animation: slideL3Merge 0.18s cubic-bezier(0.2, 0.8, 0.3, 1); z-index: 3; }
+
+.cell.slide-d1.merged { animation: slideD1Merge 0.18s cubic-bezier(0.2, 0.8, 0.3, 1); z-index: 3; }
+.cell.slide-d2.merged { animation: slideD2Merge 0.18s cubic-bezier(0.2, 0.8, 0.3, 1); z-index: 3; }
+.cell.slide-d3.merged { animation: slideD3Merge 0.18s cubic-bezier(0.2, 0.8, 0.3, 1); z-index: 3; }
+
+.cell.slide-u1.merged { animation: slideU1Merge 0.18s cubic-bezier(0.2, 0.8, 0.3, 1); z-index: 3; }
+.cell.slide-u2.merged { animation: slideU2Merge 0.18s cubic-bezier(0.2, 0.8, 0.3, 1); z-index: 3; }
+.cell.slide-u3.merged { animation: slideU3Merge 0.18s cubic-bezier(0.2, 0.8, 0.3, 1); z-index: 3; }
+
+@keyframes slideR1 { 0% { transform: translate(calc(100% + 10px), 0); } 100% { transform: translate(0, 0); } }
+@keyframes slideR2 { 0% { transform: translate(calc(200% + 20px), 0); } 100% { transform: translate(0, 0); } }
+@keyframes slideR3 { 0% { transform: translate(calc(300% + 30px), 0); } 100% { transform: translate(0, 0); } }
+
+@keyframes slideL1 { 0% { transform: translate(calc(-100% - 10px), 0); } 100% { transform: translate(0, 0); } }
+@keyframes slideL2 { 0% { transform: translate(calc(-200% - 20px), 0); } 100% { transform: translate(0, 0); } }
+@keyframes slideL3 { 0% { transform: translate(calc(-300% - 30px), 0); } 100% { transform: translate(0, 0); } }
+
+@keyframes slideD1 { 0% { transform: translate(0, calc(100% + 10px)); } 100% { transform: translate(0, 0); } }
+@keyframes slideD2 { 0% { transform: translate(0, calc(200% + 20px)); } 100% { transform: translate(0, 0); } }
+@keyframes slideD3 { 0% { transform: translate(0, calc(300% + 30px)); } 100% { transform: translate(0, 0); } }
+
+@keyframes slideU1 { 0% { transform: translate(0, calc(-100% - 10px)); } 100% { transform: translate(0, 0); } }
+@keyframes slideU2 { 0% { transform: translate(0, calc(-200% - 20px)); } 100% { transform: translate(0, 0); } }
+@keyframes slideU3 { 0% { transform: translate(0, calc(-300% - 30px)); } 100% { transform: translate(0, 0); } }
+
+@keyframes slideR1Merge {
+  0% { transform: translate(calc(100% + 10px), 0) scale(1); }
+  60% { transform: translate(0, 0) scale(1); }
+  80% { transform: translate(0, 0) scale(1.18); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+@keyframes slideR2Merge {
+  0% { transform: translate(calc(200% + 20px), 0) scale(1); }
+  60% { transform: translate(0, 0) scale(1); }
+  80% { transform: translate(0, 0) scale(1.18); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+@keyframes slideR3Merge {
+  0% { transform: translate(calc(300% + 30px), 0) scale(1); }
+  60% { transform: translate(0, 0) scale(1); }
+  80% { transform: translate(0, 0) scale(1.18); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
+@keyframes slideL1Merge {
+  0% { transform: translate(calc(-100% - 10px), 0) scale(1); }
+  60% { transform: translate(0, 0) scale(1); }
+  80% { transform: translate(0, 0) scale(1.18); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+@keyframes slideL2Merge {
+  0% { transform: translate(calc(-200% - 20px), 0) scale(1); }
+  60% { transform: translate(0, 0) scale(1); }
+  80% { transform: translate(0, 0) scale(1.18); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+@keyframes slideL3Merge {
+  0% { transform: translate(calc(-300% - 30px), 0) scale(1); }
+  60% { transform: translate(0, 0) scale(1); }
+  80% { transform: translate(0, 0) scale(1.18); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
+@keyframes slideD1Merge {
+  0% { transform: translate(0, calc(100% + 10px)) scale(1); }
+  60% { transform: translate(0, 0) scale(1); }
+  80% { transform: translate(0, 0) scale(1.18); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+@keyframes slideD2Merge {
+  0% { transform: translate(0, calc(200% + 20px)) scale(1); }
+  60% { transform: translate(0, 0) scale(1); }
+  80% { transform: translate(0, 0) scale(1.18); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+@keyframes slideD3Merge {
+  0% { transform: translate(0, calc(300% + 30px)) scale(1); }
+  60% { transform: translate(0, 0) scale(1); }
+  80% { transform: translate(0, 0) scale(1.18); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
+@keyframes slideU1Merge {
+  0% { transform: translate(0, calc(-100% - 10px)) scale(1); }
+  60% { transform: translate(0, 0) scale(1); }
+  80% { transform: translate(0, 0) scale(1.18); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+@keyframes slideU2Merge {
+  0% { transform: translate(0, calc(-200% - 20px)) scale(1); }
+  60% { transform: translate(0, 0) scale(1); }
+  80% { transform: translate(0, 0) scale(1.18); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+@keyframes slideU3Merge {
+  0% { transform: translate(0, calc(-300% - 30px)) scale(1); }
+  60% { transform: translate(0, 0) scale(1); }
+  80% { transform: translate(0, 0) scale(1.18); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+
+@keyframes mergePop {
+  0% { transform: scale(0.92); }
+  50% { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+
+.overlay {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: rgba(10,11,26,.9); color: #eef2ff; text-align: center; padding: 18px; z-index: 20; border-radius: 12px;
+}
+.overlay.hidden { display: none; }
+.overlay h1 { font-size: 30px; margin-bottom: 8px; }
+.sub { color: #9aa6d6; margin-bottom: 14px; font-size: 14px; line-height: 1.8; }
+.tip { color: #7e8bbf; font-size: 12px; margin-top: 12px; }
+.btns { display: flex; gap: 10px; }
+button { margin-top: 14px; padding: 11px 26px; font-size: 16px; font-weight: 800; color: #12132a;
+  background: linear-gradient(90deg, #ffd86b, #ff8a5b); border: none; border-radius: 24px; cursor: pointer; }
+button:active { transform: scale(.97); }
+button.ghost { background: rgba(30,36,62,.9); color: #cdd6ff; border: 1px solid #333b63;
+  font-size: 13px; padding: 8px 14px; margin-top: 0; border-radius: 18px; }
+button.ghost:active { background: #2f6df0; color: #fff; }
+#goStats b { color: #ffd86b; }
+
+/* 历史战绩 */
+.records { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 14px 0 0; }
+.records .rec {
+  background: rgba(24,26,50,.9); border: 1px solid #2e3558;
+  border-radius: 10px; padding: 6px 12px; min-width: 78px; text-align: center;
+}
+.records .rec .rk { font-size: 10px; color: #7e8bbf; font-weight: 700; }
+.records .rec .rv { font-size: 15px; font-weight: 900; color: #eef2ff; }
+.records .rec.best .rv { color: #ffd86b; }
+.records .empty { font-size: 12px; color: #7e8bbf; }
+
+.back-home {
+  display: inline-block; margin-top: 14px; font-size: 12px; color: #9aa6d6;
+  text-decoration: none; border-bottom: 1px dashed #4a5580; padding-bottom: 1px;
+}
+.back-home:hover { color: #eef2ff; }
+
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="topbar">
+    <div class="title">2048</div>
+    <div class="scores">
+      <div class="box"><div class="k">分数</div><div class="v" id="score">0</div></div>
+      <div class="box"><div class="k">最大</div><div class="v" id="bestTile">0</div></div>
+    </div>
+  </header>
+
+  <div class="bar">
+    <span class="hint">方向键 / 屏幕滑动 合并相同数字</span>
+    <div class="bar-btns">
+      <button id="undoBtn" class="ghost">撤销 (Z)</button>
+      <button id="newBtn" class="ghost">重开</button>
+    </div>
+  </div>
+
+  <div id="boardWrap">
+    <div id="board"></div>
+
+    <div id="win" class="overlay hidden">
+      <h1>🎉 2048！</h1>
+      <p class="sub">已经合出 2048，还可以继续往上冲</p>
+      <div class="btns">
+        <button id="continueBtn">继续挑战</button>
+        <button id="winNewBtn" class="ghost">重开</button>
+      </div>
+    </div>
+
+    <div id="gameover" class="overlay hidden">
+      <h1>无路可走了</h1>
+      <div id="goStats" class="sub"></div>
+      <div id="g2048RecordsOver" class="records"></div>
+      <div class="btns" style="flex-direction:column; gap:6px;">
+        <button id="overUndoBtn" class="ghost">↩️ 悔棋一步 (Z)</button>
+        <button id="retryBtn">再来一局</button>
+      </div>
+      <a class="back-home" href="index.html">← 返回游戏列表</a>
+    </div>
+  </div>
+
+  <p class="tip">把相同数字挤到一起就合并，目标是 2048</p>
+  <div id="g2048Records" class="records"></div>
+  <a class="back-home" href="index.html">← 返回游戏列表</a>
+</div>
+<script>
+// 2048 —— 纯前端 DOM 实现
+(function () {
+  "use strict";
+
+  const N = 4;
+  const boardEl = document.getElementById("board");
+  let cells = [];       // DOM 元素，索引 = y*N + x
+  let grid = [];        // 数字，0 表示空格
+  let score = 0, bestTile = 0, won = false, over = false;
+  let prev = null;      // 一步撤销的快照
+  let runSubmitted = false;
+  let hasMoved = false;
+
+  // ---------- 构建 ----------
+  function build() {
+    boardEl.innerHTML = "";
+    cells = [];
+    for (let i = 0; i < N * N; i++) {
+      const el = document.createElement("div");
+      el.className = "cell";
+      boardEl.appendChild(el);
+      cells.push(el);
+    }
+  }
+
+  function emptyIndexes() {
+    const out = [];
+    for (let i = 0; i < grid.length; i++) if (!grid[i]) out.push(i);
+    return out;
+  }
+
+  // 90% 出 2、10% 出 4（和原版一致，出 4 的概率太高会明显变难）
+  function spawn() {
+    const empty = emptyIndexes();
+    if (!empty.length) return;
+    const i = empty[Math.floor(Math.random() * empty.length)];
+    grid[i] = Math.random() < 0.9 ? 2 : 4;
+  }
+
+  function render(anim) {
+    let max = 0;
+    for (let i = 0; i < grid.length; i++) {
+      const v = grid[i], el = cells[i];
+      el.textContent = v ? String(v) : "";
+      let cls = "cell";
+      if (v) {
+        cls += " t" + v;
+        if (v > 2048) cls += " big";
+        if (anim) {
+          if (anim.slideMap && anim.slideMap.has(i)) cls += " " + anim.slideMap.get(i);
+          if (anim.mergedSet && anim.mergedSet.has(i)) cls += " merged";
+          if (anim.newIdx === i) cls += " new";
+        }
+      }
+      el.className = cls;
+      if (v > max) max = v;
+    }
+    if (max > bestTile) bestTile = max;
+    document.getElementById("score").textContent = score;
+    document.getElementById("bestTile").textContent = bestTile;
+    updateRecordRealtime();
+  }
+
+  // ---------- 移动 ----------
+  // 把每一行/列按"行进方向"抽成数组，压缩 → 合并 → 再压缩，最后写回。
+  // 抽坐标而不是抽值，写回时才知道该改哪几格。
+  function lineCoords(dir, k) {
+    const out = [];
+    for (let i = 0; i < N; i++) {
+      let x, y;
+      if (dir === "left")  { x = i; y = k; }
+      if (dir === "right") { x = N - 1 - i; y = k; }
+      if (dir === "up")    { x = k; y = i; }
+      if (dir === "down")  { x = k; y = N - 1 - i; }
+      out.push(y * N + x);
+    }
+    return out;
+  }
+
+  function canMove() {
+    if (emptyIndexes().length) return true;
+    for (let y = 0; y < N; y++) {
+      for (let x = 0; x < N; x++) {
+        const v = grid[y * N + x];
+        if (x + 1 < N && grid[y * N + x + 1] === v) return true;
+        if (y + 1 < N && grid[(y + 1) * N + x] === v) return true;
+      }
+    }
+    return false;
+  }
+
+  function move(dir) {
+    if (over) return false;
+    const snapshot = { grid: grid.slice(), score, bestTile };
+    let moved = false, gained = 0;
+    const slideMap = new Map();
+    const mergedSet = new Set();
+    const dirPrefix = {
+      left: "slide-r",
+      right: "slide-l",
+      up: "slide-d",
+      down: "slide-u"
+    }[dir];
+
+    for (let k = 0; k < N; k++) {
+      const coords = lineCoords(dir, k);
+      const nonZeros = [];
+      for (let i = 0; i < N; i++) {
+        if (grid[coords[i]] !== 0) {
+          nonZeros.push({ val: grid[coords[i]], pos: i });
+        }
+      }
+
+      const out = [];
+      let targetPos = 0;
+      for (let i = 0; i < nonZeros.length; i++) {
+        const cur = nonZeros[i];
+        if (i + 1 < nonZeros.length && cur.val === nonZeros[i + 1].val) {
+          const next = nonZeros[i + 1];
+          const mergedVal = cur.val * 2;
+          out.push(mergedVal);
+          gained += mergedVal;
+          const targetCoord = coords[targetPos];
+          mergedSet.add(targetCoord);
+          const maxDist = Math.max(cur.pos - targetPos, next.pos - targetPos);
+          if (maxDist > 0) {
+            slideMap.set(targetCoord, dirPrefix + maxDist);
+          }
+          i++;
+          targetPos++;
+        } else {
+          out.push(cur.val);
+          const targetCoord = coords[targetPos];
+          const dist = cur.pos - targetPos;
+          if (dist > 0) {
+            slideMap.set(targetCoord, dirPrefix + dist);
+          }
+          targetPos++;
+        }
+      }
+      while (out.length < N) out.push(0);
+
+      for (let i = 0; i < N; i++) {
+        if (grid[coords[i]] !== out[i]) moved = true;
+        grid[coords[i]] = out[i];
+      }
+    }
+
+    if (!moved) return false;
+    hasMoved = true;
+    prev = snapshot;
+    score += gained;
+    const emptyBefore = emptyIndexes();
+    spawn();
+    const newIdx = emptyBefore.find(i => grid[i]);
+    render({ newIdx, slideMap, mergedSet });
+    if (!won && grid.some(v => v >= 2048)) { won = true; showWin(); }
+    if (!canMove()) gameOver();
+    return true;
+  }
+
+  function undo() {
+    if (!prev) return;
+    grid = prev.grid.slice();
+    score = prev.score;
+    bestTile = prev.bestTile;
+    prev = null;
+    over = false;
+    document.getElementById("gameover").classList.add("hidden");
+    render();
+  }
+
+  // ---------- 结束 / 战绩 ----------
+  function showWin() {
+    document.getElementById("win").classList.remove("hidden");
+  }
+
+  function gameOver() {
+    over = true;
+    const rec = submitRun();
+    document.getElementById("goStats").innerHTML =
+      `本局 <b>${score}</b> 分　最大方块 <b>${bestTile}</b>`;
+    document.getElementById("g2048RecordsOver").innerHTML = recHTML(rec);
+    document.getElementById("gameover").classList.remove("hidden");
+  }
+
+  const REC_KEY = "g2048_records";
+  function loadRec() {
+    try { return JSON.parse(localStorage.getItem(REC_KEY) || "{}") || {}; }
+    catch (e) { return {}; }
+  }
+  function submitRun() {
+    if (runSubmitted) return loadRec();
+    if (!hasMoved && score === 0) return loadRec();
+    runSubmitted = true;
+    const r = loadRec();
+    r.runs = (r.runs || 0) + 1;
+    r.bestScore = Math.max(r.bestScore || 0, score);
+    r.bestTile = Math.max(r.bestTile || 0, bestTile);
+    r.wins = (r.wins || 0) + (bestTile >= 2048 ? 1 : 0);
+    try { localStorage.setItem(REC_KEY, JSON.stringify(r)); } catch (e) {}
+    renderRecords();
+    return r;
+  }
+  function submitActiveRun() {
+    if (runSubmitted) return;
+    if (!hasMoved && score === 0) return;
+    submitRun();
+  }
+  function updateRecordRealtime() {
+    if (score <= 0 && bestTile <= 2) return;
+    const r = loadRec();
+    let changed = false;
+    if (score > (r.bestScore || 0)) { r.bestScore = score; changed = true; }
+    if (bestTile > (r.bestTile || 0)) { r.bestTile = bestTile; changed = true; }
+    if (bestTile >= 2048 && !r.wins) { r.wins = 1; changed = true; }
+    if (changed) {
+      try { localStorage.setItem(REC_KEY, JSON.stringify(r)); } catch (e) {}
+      renderRecords();
+    }
+  }
+  function recHTML(r) {
+    if (!r || !r.runs) return '<span class="empty">还没有战绩，先合一把</span>';
+    return '<div class="rec best"><div class="rk">最高分</div><div class="rv">' + (r.bestScore || 0) + '</div></div>' +
+           '<div class="rec"><div class="rk">最大方块</div><div class="rv">' + (r.bestTile || 0) + '</div></div>' +
+           '<div class="rec"><div class="rk">达成 2048</div><div class="rv">' + (r.wins || 0) + '</div></div>' +
+           '<div class="rec"><div class="rk">局数</div><div class="rv">' + r.runs + '</div></div>';
+  }
+  function renderRecords() {
+    const html = recHTML(loadRec());
+    const a = document.getElementById("g2048Records");
+    if (a) a.innerHTML = html;
+  }
+
+  // ---------- 输入 ----------
+  const KEY_DIR = {
+    ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down",
+    a: "left", d: "right", w: "up", s: "down",
+  };
+  window.addEventListener("keydown", (e) => {
+    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (k === "z") { undo(); return; }
+    const dir = KEY_DIR[e.key] || KEY_DIR[k];
+    if (dir) { move(dir); e.preventDefault(); }
+  });
+
+  // 屏幕滑动
+  let sx = null, sy = null;
+  boardEl.addEventListener("pointerdown", (e) => { sx = e.clientX; sy = e.clientY; });
+  boardEl.addEventListener("pointerup", (e) => {
+    if (sx === null) return;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    sx = null;
+    if (Math.abs(dx) < 24 && Math.abs(dy) < 24) return;
+    if (Math.abs(dx) > Math.abs(dy)) move(dx > 0 ? "right" : "left");
+    else move(dy > 0 ? "down" : "up");
+  });
+
+  // ---------- 流程 ----------
+  function newGame() {
+    if (hasMoved && !runSubmitted && (score > 0 || bestTile > 2)) {
+      submitRun();
+    }
+    runSubmitted = false;
+    hasMoved = false;
+    grid = new Array(N * N).fill(0);
+    score = 0; bestTile = 0; won = false; over = false; prev = null;
+    document.getElementById("gameover").classList.add("hidden");
+    document.getElementById("win").classList.add("hidden");
+    spawn(); spawn();
+    render();
+    renderRecords();
+  }
+
+  document.getElementById("newBtn").addEventListener("click", newGame);
+  document.getElementById("winNewBtn").addEventListener("click", newGame);
+  document.getElementById("retryBtn").addEventListener("click", newGame);
+  document.getElementById("undoBtn").addEventListener("click", undo);
+  const overUndo = document.getElementById("overUndoBtn");
+  if (overUndo) overUndo.addEventListener("click", undo);
+  document.getElementById("continueBtn").addEventListener("click", () => {
+    document.getElementById("win").classList.add("hidden");
+  });
+
+  document.querySelectorAll(".back-home").forEach((a) => {
+    a.addEventListener("click", submitActiveRun);
+  });
+  window.addEventListener("beforeunload", submitActiveRun);
+  window.addEventListener("pagehide", submitActiveRun);
+
+  build();
+  newGame();
+})();
+
+</script>
+</body>
+</html>

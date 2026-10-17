@@ -130,19 +130,27 @@
       id: "count", prompt: "数有几只猫？", timeoutWin: false,
       init() {
         n = randi(3, 6 + Math.min(level, 3));
-        cats = [];
-        // 拒绝采样保证猫之间留出最小间距，否则会叠在一起根本数不清
+        // 用"网格 + 抖动"代替纯随机撒点。
+        // 纯随机即使补了最小间距的拒绝采样，在猫变多 / 窗口变窄时仍会退化到兜底分支，
+        // 把两只猫叠在同一点上（根本数不清）。网格法先固定格子、再在格子内抖动，
+        // 任何窗口尺寸下猫之间都能保持可辨认的间距。
+        const gx0 = W * 0.10, gx1 = W * 0.90;
+        const gy0 = H * 0.16, gy1 = Math.max(H * 0.34, H - 175);   // 底部给选项按钮留位
         const minD = Math.max(46, Math.min(78, W / 7));
+        const cols = clamp(Math.ceil(Math.sqrt(n * (gx1 - gx0) / (gy1 - gy0))), 1, n);
+        const rows = Math.ceil(n / cols);
+        const cw = (gx1 - gx0) / cols, ch = (gy1 - gy0) / rows;
+        const jx = Math.max(0, (cw - minD) / 2), jy = Math.max(0, (ch - minD) / 2);
+        const cells = [];
+        for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) cells.push({ c, r });
+        for (let i = cells.length - 1; i > 0; i--) { const j = randi(0, i); [cells[i], cells[j]] = [cells[j], cells[i]]; }
+        cats = [];
         for (let i = 0; i < n; i++) {
-          let spot = null;
-          for (let tries = 0; tries < 260; tries++) {
-            const p = { x: rand(W * 0.12, W * 0.88), y: rand(H * 0.22, H * 0.5) };
-            let ok = true;
-            for (const c of cats) { if (Math.hypot(c.x - p.x, c.y - p.y) < minD) { ok = false; break; } }
-            if (!spot) spot = p;          // 兜底：至少保留第一个候选点
-            if (ok) { spot = p; break; }
-          }
-          cats.push(spot);
+          const cell = cells[i];
+          cats.push({
+            x: clamp(gx0 + (cell.c + 0.5) * cw + rand(-jx, jx), 22, W - 22),
+            y: clamp(gy0 + (cell.r + 0.5) * ch + rand(-jy, jy), 22, gy1),
+          });
         }
         const max = n + 2;
         opts = []; for (let i = 1; i <= max; i++) opts.push(i);
@@ -236,14 +244,19 @@
         // 水果从屏幕中部生成，短距离下落，确保限时内能接满
         spawnY = H * 0.22;
         catchY = H - 70;
-        bx = W / 2; fruits = []; caught = 0; missed = 0; need = 3;
+        bx = W / 2; fruits = []; caught = 0; missed = 0;
+        // 关卡越高时限越短（宿主 T(level) 最低压到 2 秒）。宽屏上篮子横穿一次就要 2 秒以上，
+        // 再硬要求接满 3 个水果在物理上做不到 → 关卡 ≥10 起只要 2 个。
+        need = diff >= 10 ? 2 : 3;
         acc = 0.7; // 让首帧立即生成第一颗水果，避免前期空窗
         // 预生成一颗居中的水果，玩家开打立刻有目标
         fruits.push({ x: rand(W * 0.3, W * 0.7), y: spawnY, vy: 360 + diff * 8 });
       },
       update(dt) {
-        if (keys["a"] || keys["arrowleft"]) bx -= 480 * dt;
-        else if (keys["d"] || keys["arrowright"]) bx += 480 * dt;
+        // 篮子速度随关卡略增，配合上面"高关卡只要 2 个水果"
+        const spd = 480 + Math.min(4, diff) * 20;
+        if (keys["a"] || keys["arrowleft"]) bx -= spd * dt;
+        else if (keys["d"] || keys["arrowright"]) bx += spd * dt;
         else if (pointer.down) bx = clamp(pointer.x, bw / 2, W - bw / 2);
         bx = clamp(bx, bw / 2, W - bw / 2);
         // 更快的生成频率，保证限时内出够水果
@@ -289,7 +302,7 @@
   let phase = "menu"; // menu | prompt | play | result | over
   let phaseT = 0;
   let current = null, lastId = null;
-  let level = 1, lives = 4, combo = 0, score = 0;
+  let level = 1, lives = 4, combo = 0, score = 0, runWins = 0;
   let best = parseInt(localStorage.getItem("ww_best") || "0", 10) || 0;
   let playTime = 0, timeLimit = 1, lastResult = null;
 
@@ -297,8 +310,13 @@
   const T = lv => Math.max(2.0, 5.0 - lv * 0.18); // 起始 4.82s，逐关缩短，最低 2s
 
   function nextMicrogame() {
-    let pick;
-    do { pick = GAMES[randi(0, GAMES.length - 1)]; } while (GAMES.length > 1 && pick.gid === lastId);
+    let pick, tries = 0;
+    // "不要连续两关相同"用 do/while 重抽实现。若随机源退化（固定种子、被 stub 的
+    // Math.random 等），这行会永远抽到同一个工厂 → 死循环卡死游戏。
+    // 加一个重试上限：抽不到不同的就接受重复，宁可连出两关也不能卡住。
+    do {
+      pick = GAMES[randi(0, GAMES.length - 1)];
+    } while (GAMES.length > 1 && pick.gid === lastId && ++tries < 20);
     current = pick(level);
     lastId = pick.gid;
     current.finished = false;
@@ -318,7 +336,7 @@
   }
 
   function resolveRound(win) {
-    if (win) { combo++; score += 100 * combo; level++; if (combo > best) { best = combo; localStorage.setItem("ww_best", String(best)); } }
+    if (win) { combo++; runWins++; score += 100 * combo; level++; if (combo > best) { best = combo; localStorage.setItem("ww_best", String(best)); } }
     else { combo = 0; lives--; }
     lastResult = win ? "win" : "lose";
     if (lives <= 0) {
@@ -330,7 +348,7 @@
   }
 
   function startGame() {
-    level = 1; lives = 4; combo = 0; score = 0; lastId = null;
+    level = 1; lives = 4; combo = 0; score = 0; runWins = 0; lastId = null;
     document.getElementById("menu").classList.add("hidden");
     document.getElementById("gameover").classList.add("hidden");
     nextMicrogame();
@@ -338,7 +356,7 @@
 
   function showOver() {
     const el = document.getElementById("goStats");
-    el.innerHTML = `最高连胜 <b>${best}</b><br>本局得分 <b>${score}</b>`;
+    el.innerHTML = `最高连胜 <b>${best}</b><br>本局得分 <b>${score}</b>　本局通关 <b>${runWins}</b> 个`;
     submitRun();          // 先把本局成绩写进 localStorage，再刷新展示
     renderRecords();
     document.getElementById("gameover").classList.remove("hidden");
@@ -355,7 +373,8 @@
     r.runs = (r.runs || 0) + 1;
     r.bestCombo = Math.max(r.bestCombo || 0, best);
     r.bestScore = Math.max(r.bestScore || 0, score);
-    r.totalWins = (r.totalWins || 0) + combo;   // 本局实际连过的小游戏数
+    r.totalWins = (r.totalWins || 0) + runWins;   // 本局实际连过的小游戏数
+                                                 // （旧写法记的是 combo：一旦失败归零，这一局赢过的全都不算数）
     try { localStorage.setItem(REC_KEY, JSON.stringify(r)); } catch (e) {}
     return r;
   }

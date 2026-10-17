@@ -4,31 +4,34 @@
 
   // ---------- 卡牌定义（数据驱动） ----------
   // 卡牌 effect 返回 false 表示打出失败(如需目标但未选)
+  // 第二个参数 c 是"手里这一张具体卡牌实例"——升级状态记在实例上（c.upgraded），
+  // 所以升级一张打击只加强这一张，而不是所有同名卡。
+  // （旧写法按卡牌 id 全局记升级：篝火升 1 张打击，等于把牌组里 5 张打击全升了。）
   const CARD_DEFS = {
     strike: { name: "打击", cost: 1, type: "attack", desc: "造成 6 点伤害。",
-      effect: (g) => { if (!g.targetEnemy()) return false; g.dealDamage(g.target, 6 + 3 * up("strike")); return true; } },
+      effect: (g, c) => { if (!g.targetEnemy()) return false; g.dealDamage(g.target, 6 + 3 * upg(c)); return true; } },
     defend: { name: "防御", cost: 1, type: "skill", desc: "获得 5 点格挡。",
-      effect: (g) => { g.player.block += 5 + 3 * up("defend"); return true; } },
+      effect: (g, c) => { g.player.block += 5 + 3 * upg(c); return true; } },
     bash: { name: "猛击", cost: 2, type: "attack", desc: "造成 8 伤害并施加 2 层易伤。",
-      effect: (g) => { if (!g.targetEnemy()) return false; const m = up("bash") ? 10 : 8; g.dealDamage(g.target, m); g.addStatus(g.target, "vuln", 2); return true; } },
+      effect: (g, c) => { if (!g.targetEnemy()) return false; const m = upg(c) ? 10 : 8; g.dealDamage(g.target, m); g.addStatus(g.target, "vuln", 2); return true; } },
     cleave: { name: "横劈", cost: 1, type: "attack", desc: "对所有敌人造成 7 伤害。",
-      effect: (g) => { const d = 7 + 3 * up("cleave"); for (const e of g.enemies) if (!e.dead) g.dealDamage(e, d); return true; } },
+      effect: (g, c) => { const d = 7 + 3 * upg(c); for (const e of g.enemies) if (!e.dead) g.dealDamage(e, d); return true; } },
     poison_stab: { name: "毒刺", cost: 1, type: "attack", desc: "造成 4 伤害，施加 3 中毒。",
-      effect: (g) => { if (!g.targetEnemy()) return false; g.dealDamage(g.target, 4 + 2 * up("poison_stab")); g.addStatus(g.target, "poison", 3); return true; } },
+      effect: (g, c) => { if (!g.targetEnemy()) return false; g.dealDamage(g.target, 4 + 2 * upg(c)); g.addStatus(g.target, "poison", 3); return true; } },
     pummel: { name: "连击", cost: 1, type: "attack", desc: "造成 3 伤害 2 次。",
-      effect: (g) => { if (!g.targetEnemy()) return false; const t = g.target; const d = 3 + up("pummel"); g.dealDamage(t, d); if (!t.dead) g.dealDamage(t, d); return true; } },
+      effect: (g, c) => { if (!g.targetEnemy()) return false; const t = g.target; const d = 3 + upg(c); g.dealDamage(t, d); if (!t.dead) g.dealDamage(t, d); return true; } },
     iron_wave: { name: "铁浪", cost: 1, type: "attack", desc: "造成 5 伤害，获得 5 格挡。",
-      effect: (g) => { if (!g.targetEnemy()) return false; const k = up("iron_wave"); g.dealDamage(g.target, 5 + 2 * k); g.player.block += 5 + 2 * k; return true; } },
+      effect: (g, c) => { if (!g.targetEnemy()) return false; const k = upg(c); g.dealDamage(g.target, 5 + 2 * k); g.player.block += 5 + 2 * k; return true; } },
     shrug: { name: "耸肩", cost: 1, type: "skill", desc: "获得 8 格挡，抽 1 张牌。",
-      effect: (g) => { const k = up("shrug"); g.player.block += 8 + 2 * k; g.drawCards(1 + k); return true; } },
+      effect: (g, c) => { const k = upg(c); g.player.block += 8 + 2 * k; g.drawCards(1 + k); return true; } },
     anger: { name: "愤怒", cost: 0, type: "attack", desc: "造成 6 伤害。将一张愤怒放入弃牌堆。",
-      effect: (g) => { if (!g.targetEnemy()) return false; g.dealDamage(g.target, 6 + 3 * up("anger")); g.discard.push({ id: "anger", uid: uid() }); return true; } },
+      effect: (g, c) => { if (!g.targetEnemy()) return false; g.dealDamage(g.target, 6 + 3 * upg(c)); g.discard.push({ id: "anger", uid: uid() }); return true; } },
     flame_barrier: { name: "烈焰屏障", cost: 2, type: "skill", desc: "获得 12 格挡。",
-      effect: (g) => { g.player.block += 12 + 4 * up("flame_barrier"); return true; } },
+      effect: (g, c) => { g.player.block += 12 + 4 * upg(c); return true; } },
     heavy_blade: { name: "重刃", cost: 2, type: "attack", desc: "造成 14 伤害。",
-      effect: (g) => { if (!g.targetEnemy()) return false; g.dealDamage(g.target, 14 + 6 * up("heavy_blade")); return true; } },
+      effect: (g, c) => { if (!g.targetEnemy()) return false; g.dealDamage(g.target, 14 + 6 * upg(c)); return true; } },
     weakness: { name: "衰弱", cost: 1, type: "skill", desc: "所有敌人施加 2 层虚弱。",
-      effect: (g) => { for (const e of g.enemies) if (!e.dead) g.addStatus(e, "weak", 2 + up("weakness")); return true; } },
+      effect: (g, c) => { for (const e of g.enemies) if (!e.dead) g.addStatus(e, "weak", 2 + upg(c)); return true; } },
   };
 
   // ---------- 初始牌组 ----------
@@ -107,12 +110,13 @@
     enemies: [], target: null,
     map: [], mapRow: 0, mapCol: 0, floor: 1,
     state: "menu",
-    cur: { upgraded: {} }, // 升级记录
+    turnLock: false,   // 回合切换锁：见 endTurn / turnStart
   };
   const G = game;
 
-  // 升级等级读取助手：未升级的卡返回 0，避免 undefined*N = NaN
-  const up = (id) => (G.cur.upgraded[id] || 0);
+  // 升级读取助手：升级状态记在"这一张卡牌实例"上（c.upgraded）。
+  // 旧写法按卡牌 id 全局记录，导致篝火升级 1 张"打击"等于把牌组里 5 张打击全升了。
+  const upg = (card) => (card && card.upgraded) || 0;
 
   // 把战斗辅助函数挂到 G 上，供卡牌 effect 以 g.xxx() 形式调用
   // （否则 g.targetEnemy / g.dealDamage 等都是 undefined，会抛 TypeError 导致点击无反应）
@@ -197,7 +201,9 @@
 
   // ---------- 状态结算 ----------
   function settleStatuses(t) {
-    // 中毒：扣 stacks 血，然后 -1
+    // 中毒：扣 stacks 点血；层数衰减交给 tickDown（每回合 -1）
+    // 旧写法在这里也减了 1 层，叠加 tickDown 等于每回合掉 2 层 ——
+    // 3 层中毒只能打出 4 点总伤害（应该 3+2+1=6），毒刺流派直接残废。
     if (t.statuses.poison) { 
       const p = t.statuses.poison; 
       t.hp -= p; 
@@ -206,8 +212,6 @@
         t.hp = 0; 
         if (t !== G.player) t.dead = true; 
       }
-      // 性能优化：只有在数值大于0时才进行递减操作
-      if (p > 0) t.statuses.poison -= 1;
     }
   }
   function tickDown(t) {
@@ -217,13 +221,18 @@
   // ---------- 回合 ----------
   function turnStart() {
     G.player.block = 0;
-    for (const e of G.enemies) e.block = 0;
+    // 注意：敌人的护甲不能在这里清！旧写法在这里把所有 e.block 清零，
+    // 而敌人回合（endTurn）才刚给它叠上护甲 —— 等于玩家一出手护甲就没了，
+    // 哥布林/精英/史莱姆的"防御"意图完全无效。正确时机是"敌人自己回合开始时"（见 endTurn）。
     G.player.energy = G.player.maxEnergy;
     drawCards(5);
+    G.turnLock = false;   // 回合已真正开始，解锁
     renderBattle();
   }
   function endTurn() {
-    if (G.state !== "battle") return;
+    // turnLock：350ms 过渡窗口期 state 仍是 battle，狂点"结束回合"会让敌人多打一轮
+    if (G.state !== "battle" || G.turnLock) return;
+    G.turnLock = true;
     // 玩家弃手牌
     discardHand();
     renderBattle();
@@ -232,6 +241,8 @@
       const rel = RELIC_DEFS[id];
       if (rel && rel.effect) rel.effect(G);
     }
+    // 敌人回合开始：清掉上一轮留下的护甲（与《杀戮尖塔》一致，护甲在自己回合开始时失效）
+    for (const e of G.enemies) e.block = 0;
     // 敌人按意图行动
     for (const e of G.enemies) enemyAct(e);
     // 玩家死亡？
@@ -267,7 +278,8 @@
     G.target = G.enemies[0];
     G.player.block = 0; G.player.statuses = {};
     G.player.strength = 0;                     // 力量药水只作用于本场战斗
-    G.draw = shuffle(G.deck.map(c => ({ id: c.id, uid: uid() })));
+    // 洗牌时要把"这张牌升级过"的标记一起带进牌堆，否则一进战斗升级就白升了
+    G.draw = shuffle(G.deck.map(c => ({ id: c.id, uid: uid(), upgraded: c.upgraded || 0 })));
     G.discard = []; G.hand = [];
     G.state = "battle";
     const nameEl = document.getElementById("nodename");
@@ -302,7 +314,10 @@
     G.map = [];
     for (let r = 0; r < rows; r++) {
       const row = [];
-      const n = randi(2, 4);
+      // 起点层与 Boss 层各只放一个节点。
+      // 旧写法这两层也会随机 2~4 个节点，但可达性推导只允许"第 0 层的第 0 列 / Boss 层任意列"，
+      // 于是起点层会显示出一排看着能点、点了却没反应的死节点。
+      const n = (r === 0 || r === rows - 1) ? 1 : randi(2, 4);
       for (let i = 0; i < n; i++) {
         let t;
         if (r === rows - 1) t = "boss";
@@ -363,7 +378,7 @@
       G.player.hp = Math.min(G.player.maxHp, G.player.hp + Math.floor(G.player.maxHp * 0.15));
       G.state = "reward"; show("reward"); renderReward();
     } else if (node.t === "shop") {
-      G.state = "shop"; show("shop"); renderShop();
+      G.state = "shop"; initShop(); show("shop"); renderShop();
     }
   }
 
@@ -406,12 +421,25 @@
   document.getElementById("restUpgrade").addEventListener("click", () => {
     const list = document.getElementById("upgradeList");
     list.innerHTML = "";
-    G.deck.forEach((c, i) => {
+    delete list.dataset.done;      // 每次进篝火只允许升级一张
+    G.deck.forEach((c) => {
       const def = CARD_DEFS[c.id];
       const item = document.createElement("div");
       item.className = "upgrade-item";
-      item.innerHTML = `<div class="uname">${def.name}${G.cur.upgraded[c.id] ? " ✦" : ""}</div><div class="udesc">${def.desc}</div>`;
-      item.addEventListener("click", () => { G.cur.upgraded[c.id] = 1; list.innerHTML = "<p style='text-align:center;color:#9b8cc4'>已升级 ✦</p>"; setTimeout(backToMap, 600); });
+      item.innerHTML = `<div class="uname">${def.name}${upg(c) ? " ✦" : ""}</div><div class="udesc">${def.desc}</div>`;
+      // 升级记在这一张卡上；已经升过的不能再点
+      if (!upg(c)) {
+        item.addEventListener("click", () => {
+          if (list.dataset.done) return;
+          list.dataset.done = "1";
+          c.upgraded = (c.upgraded || 0) + 1;
+          list.innerHTML = "<p style='text-align:center;color:#9b8cc4'>已升级 ✦ 这张 " + def.name + "</p>";
+          setTimeout(backToMap, 600);
+        });
+      } else {
+        item.style.opacity = "0.5";
+        item.style.cursor = "default";
+      }
       list.appendChild(item);
     });
   });
@@ -455,8 +483,8 @@
       const card = document.createElement("div");
       const playable = G.player.energy >= def.cost;
       card.className = "card t-" + def.type + (playable ? " playable" : " disabled");
-      const upg = G.cur.upgraded[c.id] ? " ✦" : "";
-      card.innerHTML = `<div class="cost">${def.cost}</div><div class="cname">${def.name}${upg}</div><div class="ctype">${typeLabel(def.type)}</div><div class="cdesc">${def.desc}</div>`;
+      const upMark = upg(c) ? " ✦" : "";
+      card.innerHTML = `<div class="cost">${def.cost}</div><div class="cname">${def.name}${upMark}</div><div class="ctype">${typeLabel(def.type)}</div><div class="cdesc">${def.desc}</div>`;
       if (playable) card.addEventListener("click", () => playCard(c));
       handEl.appendChild(card);
     }
@@ -479,7 +507,7 @@
   function playCard(c) {
     const def = CARD_DEFS[c.id];
     if (G.player.energy < def.cost) return;
-    const ok = def.effect(G);
+    const ok = def.effect(G, c);
     if (ok === false) { flashMsg("需要选择目标"); return; }
     G.player.energy -= def.cost;
     // 移出手牌到弃牌堆
@@ -564,7 +592,6 @@
     G.relics = [];
     G.potions = [];
     G.deck = STARTER_DECK.map(id => ({ id }));
-    G.cur.upgraded = {};
     G.floor = 1;
     genMap();
     renderMap();
@@ -605,48 +632,72 @@
     });
   }
 
+  function initShop() {
+    G.shopItems = [];
+    const cardPool = REWARD_POOL.slice();
+    while (G.shopItems.length < 3 && cardPool.length) {
+      const id = cardPool.splice(randi(0, cardPool.length - 1), 1)[0];
+      const def = CARD_DEFS[id];
+      const cost = 25 + (def ? def.cost * 15 : 15);
+      G.shopItems.push({ type: "card", id, cost, bought: false });
+    }
+    const unownedRelics = Object.keys(RELIC_DEFS).filter(k => !(G.relics || []).includes(k));
+    if (unownedRelics.length) {
+      G.shopItems.push({ type: "relic", id: pick(unownedRelics), cost: 65, bought: false });
+    }
+    const potionIds = Object.keys(POTION_DEFS);
+    if (potionIds.length) {
+      const pid = pick(potionIds);
+      G.shopItems.push({ type: "potion", id: pid, cost: POTION_DEFS[pid].cost, bought: false });
+    }
+  }
+
   function renderShop() {
     const container = document.getElementById("shopContent");
     container.innerHTML = "";
     const goldSpan = document.getElementById("shopGold");
-    goldSpan.textContent = G.player.gold;
-    const items = [];
-    const cardPool = REWARD_POOL.slice();
-    while (items.length < 3 && cardPool.length) {
-      // splice 取出，避免同一张卡重复上架
-      const id = cardPool.splice(randi(0, cardPool.length - 1), 1)[0];
-      items.push({ type: "card", id });
-    }
-    const relicIds = Object.keys(RELIC_DEFS);
-    if (relicIds.length) items.push({ type: "relic", id: pick(relicIds) });
-    const potionIds = Object.keys(POTION_DEFS);
-    if (potionIds.length) items.push({ type: "potion", id: pick(potionIds) });
-    items.forEach(it => {
+    if (goldSpan) goldSpan.textContent = G.player.gold;
+    if (!G.shopItems || G.shopItems.length === 0) initShop();
+
+    G.shopItems.forEach(it => {
       const div = document.createElement("div");
-      div.className = "shop-item";
+      div.className = "shop-item" + (it.bought ? " bought" : "");
+      let title = "", sub = "";
       if (it.type === "card") {
-        const def = CARD_DEFS[it.id];
-        const cost = def.cost * 5;
-        div.innerHTML = `${def.name}<br>费用: ${cost}`;
-        div.addEventListener("click", () => buyItem(it, cost));
+        title = CARD_DEFS[it.id]?.name || it.id;
+        sub = "卡牌";
       } else if (it.type === "relic") {
-        const def = RELIC_DEFS[it.id];
-        const cost = 60;
-        div.innerHTML = `${def.name}<br>遗物`;
-        div.addEventListener("click", () => buyItem(it, cost));
+        title = RELIC_DEFS[it.id]?.name || it.id;
+        sub = "遗物";
       } else if (it.type === "potion") {
-        const def = POTION_DEFS[it.id];
-        const cost = def.cost;
-        div.innerHTML = `${def.name}<br>药水`;
-        div.addEventListener("click", () => buyItem(it, cost));
+        title = POTION_DEFS[it.id]?.name || it.id;
+        sub = "药水";
+      }
+      if (it.bought) {
+        div.innerHTML = `${title}<br><small style="color:var(--mut)">已售罄</small>`;
+        div.style.opacity = "0.45";
+        div.style.pointerEvents = "none";
+      } else {
+        div.innerHTML = `${title}<br><small style="color:var(--mut)">${sub}</small><div class="s-price">🪙 ${it.cost}</div>`;
+        div.addEventListener("click", () => buyItem(it, it.cost));
       }
       container.appendChild(div);
     });
   }
 
   function buyItem(item, price) {
+    if (item.bought) return;
     if (G.player.gold < price) { flashMsg("金币不足"); return; }
+    if (item.type === "potion" && (G.potions || []).length >= 3) {
+      flashMsg("药水栏已满（最多携带 3 瓶）");
+      return;
+    }
+    if (item.type === "relic" && (G.relics || []).includes(item.id)) {
+      flashMsg("已拥有该遗物");
+      return;
+    }
     G.player.gold -= price;
+    item.bought = true;
     if (item.type === "card") {
       G.deck.push({ id: item.id });
     } else if (item.type === "relic") {

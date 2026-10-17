@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>2048 数字合并</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="wrap">
+  <header class="topbar">
+    <div class="title">2048</div>
+    <div class="scores">
+      <div class="box"><div class="k">分数</div><div class="v" id="score">0</div></div>
+      <div class="box"><div class="k">最大</div><div class="v" id="bestTile">0</div></div>
+    </div>
+  </header>
+
+  <div class="bar">
+    <span class="hint">方向键 / 屏幕滑动 合并相同数字</span>
+    <div class="bar-btns">
+      <button id="undoBtn" class="ghost">撤销 (Z)</button>
+      <button id="newBtn" class="ghost">重开</button>
+    </div>
+  </div>
+
+  <div id="boardWrap">
+    <div id="board"></div>
+
+    <div id="win" class="overlay hidden">
+      <h1>🎉 2048！</h1>
+      <p class="sub">已经合出 2048，还可以继续往上冲</p>
+      <div class="btns">
+        <button id="continueBtn">继续挑战</button>
+        <button id="winNewBtn" class="ghost">重开</button>
+      </div>
+    </div>
+
+    <div id="gameover" class="overlay hidden">
+      <h1>无路可走了</h1>
+      <div id="goStats" class="sub"></div>
+      <div id="g2048RecordsOver" class="records"></div>
+      <div class="btns" style="flex-direction:column; gap:6px;">
+        <button id="overUndoBtn" class="ghost">↩️ 悔棋一步 (Z)</button>
+        <button id="retryBtn">再来一局</button>
+      </div>
+      <a class="back-home" href="../index.html">← 返回游戏列表</a>
+    </div>
+  </div>
+
+  <p class="tip">把相同数字挤到一起就合并，目标是 2048</p>
+  <div id="g2048Records" class="records"></div>
+  <a class="back-home" href="../index.html">← 返回游戏列表</a>
+</div>
+<script src="game.js"></script>
+</body>
+</html>

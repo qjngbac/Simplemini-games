@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>扫雷 Minesweeper</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="wrap">
+  <header class="topbar">
+    <div class="title">扫雷</div>
+    <div class="stats">
+      <span>💣 <b id="mineLeft">10</b></span>
+      <span>⏱ <b id="timer">00:00</b></span>
+      <span>难度 <b id="levelName">初级</b></span>
+    </div>
+  </header>
+
+  <div id="boardWrap">
+    <div id="board"></div>
+
+    <!-- 菜单 -->
+    <div id="menu" class="overlay">
+      <h1>扫雷</h1>
+      <p class="sub">点开所有非雷格子就算通关</p>
+      <div class="diffs">
+        <button class="diff" data-diff="easy">初级 9×9 · 10 雷</button>
+        <button class="diff" data-diff="mid">中级 16×16 · 40 雷</button>
+        <button class="diff" data-diff="exp">专家 30×16 · 99 雷</button>
+      </div>
+      <p class="tip">左键翻开 · 右键插旗 · 数字上双击可"一键展开"</p>
+      <p class="tip">手机：点一下翻开，长按 0.4 秒插旗（或开"🚩 插旗模式"）</p>
+      <div id="minesRecords" class="records"></div>
+      <a class="back-home" href="../index.html">← 返回游戏列表</a>
+    </div>
+
+    <!-- 结束 -->
+    <div id="result" class="overlay hidden">
+      <h1 id="resultTitle">💥 踩雷了</h1>
+      <div id="resultStats" class="sub"></div>
+      <div class="btns">
+        <button id="retryBtn">再来一局</button>
+        <button id="changeBtn" class="ghost">换个难度</button>
+      </div>
+      <div id="minesRecordsOver" class="records"></div>
+      <a class="back-home" href="../index.html">← 返回游戏列表</a>
+    </div>
+  </div>
+
+  <div class="ctrl">
+    <button id="newBtn" class="ghost">重开</button>
+    <button id="flagBtn" class="ghost">🚩 插旗模式：关</button>
+  </div>
+  <a class="back-home" href="../index.html">← 返回游戏列表</a>
+</div>
+<script src="game.js"></script>
+</body>
+</html>

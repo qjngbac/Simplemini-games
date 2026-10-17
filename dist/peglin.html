@@ -337,6 +337,12 @@ button:active { transform: scale(0.97); }
   const PEG_R = 8;
   const BALL_R = 9;
   const CANNON_Y = 215; // 发射器 Y 坐标（位于顶部 UI 下方）
+  // 弹珠速度上限：弹力钉（完全弹性）叠加"弹簧之靴"的 ×1.2 会持续给弹珠注入能量，
+  // 不限速的话弹珠会越弹越快、在钉阵里疯狂抖动，最后一发要跑到 20s 超时才结束。
+  const MAX_BALL_SPEED = 42;
+  // 单发里弹力钉最多贡献多少次命中：弹力钉"碰一下就涨伤害"是它的核心价值，
+  // 但在密集钉阵里反复触碰会把伤害刷成天文数字，必须封顶。
+  const BUMPER_MAX_HITS = 12;
 
   // ---------- 特殊钉配额（逐关解锁） ----------
   // 场上只有 4 种带特殊能力的钉子（金币钉 🪙 不算，它从第 1 层起就存在）。
@@ -480,6 +486,9 @@ button:active { transform: scale(0.97); }
     pegHits: 0,
     curCrit: false,
     critPegsHit: 0,
+    bumperHits: 0,
+    shotMult: 0,      // 本次发射所有弹珠落底倍率里的最高值（见 onBallDropOut）
+    runToken: 0,      // 本局代号：结算后自增，用来作废上一局残留的定时器
     popups: [],
     particles: [],
     lightningFx: [],
@@ -594,9 +603,12 @@ button:active { transform: scale(0.97); }
   function createPeg(x, y, type) {
     const isBumper = type === "bumper";
     const r = isBumper ? PEG_R + 3 : (hasRelic("magnet") ? PEG_R + 2 : PEG_R);
+    // 弹力钉原先 restitution = 1.3：大于 1 的恢复系数在物理上等于"每次碰撞都注入能量"，
+    // 弹珠会在它上面越弹越快、永远停不下来（只能靠超时兜底），顺带把 pegHits 刷爆。
+    // 改回 1.0（完全弹性）：手感依旧是"弹得最欢的钉子"，"更快"改由弹簧之靴遗物承担。
     const peg = Bodies.circle(x, y, r, {
       isStatic: true,
-      restitution: isBumper ? 1.3 : 0.8,
+      restitution: isBumper ? 1.0 : 0.8,
       label: "peg",
     });
     peg.pegType = type;
@@ -717,8 +729,13 @@ button:active { transform: scale(0.97); }
         updateHUD();
       }
     } else if (peg.pegType === "bumper") {
-      G.pegHits += 1;
-      updateDamageMeter();
+      // 弹力钉每次触碰都算命中（这是它的价值），但封顶，
+      // 否则在密集钉阵里反复弹跳会把伤害刷成天文数字
+      if (G.bumperHits < BUMPER_MAX_HITS) {
+        G.bumperHits++;
+        G.pegHits += 1;
+        updateDamageMeter();
+      }
     }
   }
 
@@ -811,7 +828,7 @@ button:active { transform: scale(0.97); }
 
   function watchdog(dtMs) {
     if (G.state !== "firing") return;
-    if (activeBalls.length === 0) { finishPlayerAttack(1.0); return; }
+    if (activeBalls.length === 0) { finishPlayerAttack(); return; }
 
     let maxSpeed = 0;
     for (const b of activeBalls) {
@@ -865,6 +882,8 @@ button:active { transform: scale(0.97); }
     G.pegHits = 0;
     G.curCrit = false;
     G.critPegsHit = 0;
+    G.bumperHits = 0;
+    G.shotMult = 0;
     G.splitDone = false;
     shotStart = performance.now();
     stallMs = 0;
@@ -894,28 +913,36 @@ button:active { transform: scale(0.97); }
   function onBallDropOut(ball) {
     // 判定掉入哪个底部加成槽
     const bx = ball.position.x;
-    let mult = 1.0;
+    let mult = 1.0, label = "x1.0", color = "#38bdf8";
     for (const b of buckets) {
       if (Math.abs(bx - b.x) <= b.w / 2) {
-        mult = b.mult;
-        spawnPopup(b.x, b.y - 16, b.label, b.color);
+        mult = b.mult; label = b.label; color = b.color;
         break;
       }
     }
 
+    // 本次发射可能有多颗弹珠（套娃分裂）。旧写法只用"最后一颗落底"的倍率结算，
+    // 但每颗弹珠都会各自跳出一个倍率数字，于是玩家会看到"明明弹了 x1.5，伤害却按 x0.5 算"。
+    // 现在统一取本次发射里最高的那个倍率，并在最后一颗落底时把结算倍率明确标出来。
+    G.shotMult = Math.max(G.shotMult || 0, mult);
+
     World.remove(world, ball);
     activeBalls = activeBalls.filter(b => b !== ball);
 
-    // 所有弹珠都落底后进行最终伤害结算
     if (activeBalls.length === 0) {
-      finishPlayerAttack(mult);
+      spawnPopup(W / 2, H - 92, `总倍率 ${(G.shotMult || 1).toFixed(1)}x`, color);
+      // 所有弹珠都落底后进行最终伤害结算
+      finishPlayerAttack();
+    } else {
+      spawnPopup(bx, H - 62, label, color);
     }
   }
 
-  function finishPlayerAttack(bucketMult) {
+  function finishPlayerAttack() {
     // 立刻离开 firing，避免看门狗/玩家输入重复触发结算
     G.state = "resolving";
 
+    const bucketMult = G.shotMult > 0 ? G.shotMult : 1.0;
     const rawDmg = calcCurrentDamage();
     let totalDmg = Math.round(rawDmg * bucketMult);
     // 虚弱（死灵法师 / 红龙的 debuff 意图施加）：伤害 -25%
@@ -925,16 +952,20 @@ button:active { transform: scale(0.97); }
     // 攻击第一个存活的敌人
     const target = G.enemies.find(e => e.hp > 0);
     if (target && totalDmg > 0) {
+      const overkill = Math.max(0, totalDmg - ((target.block || 0) + target.hp));
       const real = damageEnemy(target, totalDmg);   // 统一入口，敌人护甲才会生效
       G.screenShake = Math.min(15, 4 + Math.floor(totalDmg / 10));
       spawnPopup(target.x || W / 2, 80, `⚔️ -${real}`, "#facc15");
 
       safeCall(curOrb.onCombatDmg, G, real);
 
-      // 庇护之戒遗物
+      // 庇护之戒遗物：溢出伤害的 30% 转化为护甲
       if (hasRelic("shield_ring")) {
-        const blockGain = Math.floor(real * 0.3);
-        G.player.block += blockGain;
+        const blockGain = Math.floor(overkill * 0.3);
+        if (blockGain > 0) {
+          G.player.block += blockGain;
+          spawnPopup(W / 2, 80, `🛡️ +${blockGain}`, "#38bdf8");
+        }
       }
     }
 
@@ -954,7 +985,10 @@ button:active { transform: scale(0.97); }
 
     // 如果敌人依然存活，进入敌人行动回合
     if (G.enemies.some(e => e.hp > 0)) {
-      setTimeout(enemyTurn, 600);
+      // 带上本局代号：玩家若在这 600ms 里点了"🏁 结束"，gameOver 会把 runToken 加一，
+      // 这个回调就直接作废，不会再把已经结束的对局硬拉回 aim 状态。
+      const token = G.runToken;
+      setTimeout(() => { if (token === G.runToken) enemyTurn(); }, 600);
     } else if (!G.floorEnded) {
       // 兜底：敌人已清空但结算没排上（理论上不会走到），交还操作权
       G.state = "aim";
@@ -985,7 +1019,10 @@ button:active { transform: scale(0.97); }
       const kind = nextIntent(e);
 
       if (kind === "block") {
-        const gain = e.block || 8;
+        // 注意：e.block 是"当前剩余护甲"，会被伤害扣减；模板里的护甲数值要单独存成 blockVal。
+        // 旧写法读 e.block，而 G 初始化时它被写成 0 → 永远取兜底值 8，
+        // 重甲兽人（block:14）和 Boss（block:20）的护甲数值形同虚设。
+        const gain = e.blockVal || 8;
         e.block = (e.block || 0) + gain;
         spawnPopup(e.x || W / 2, 90, `🛡️ +${gain}`, "#38bdf8");
         continue;
@@ -1032,7 +1069,8 @@ button:active { transform: scale(0.97); }
     if (G.floorEnded || G.enemies.length === 0) return;
     if (G.enemies.every(e => e.hp <= 0)) {
       G.floorEnded = true;
-      setTimeout(floorWin, 500);
+      const token = G.runToken;      // 结束后不再弹出奖励 / 商店面板
+      setTimeout(() => { if (token === G.runToken) floorWin(); }, 500);
     }
   }
 
@@ -1055,6 +1093,7 @@ button:active { transform: scale(0.97); }
         maxHp: template.baseHp + n * 10,
         flash: 0,
         block: 0,
+        blockVal: template.block || 8,   // 模板里的护甲数值，见 enemyTurn
         intentIdx: -1,      // -1 → 第一次 nextIntent 取到 intents[0]
         x: W / 2,
       });
@@ -1070,6 +1109,7 @@ button:active { transform: scale(0.97); }
           maxHp: t.baseHp + n * 4,
           flash: 0,
           block: 0,
+          blockVal: t.block || 8,
           intentIdx: -1,
           x: startX + i * 110,
         });
@@ -1533,6 +1573,14 @@ button:active { transform: scale(0.97); }
         accumulator -= FIXED_STEP;
       }
 
+      // 弹珠限速：完全弹性的弹力钉 + 弹簧之靴会持续注入能量，必须封顶
+      for (const b of activeBalls) {
+        const sp = Math.hypot(b.velocity.x, b.velocity.y);
+        if (sp > MAX_BALL_SPEED) {
+          Body.setVelocity(b, { x: b.velocity.x / sp * MAX_BALL_SPEED, y: b.velocity.y / sp * MAX_BALL_SPEED });
+        }
+      }
+
       // 弹珠掉底与移出检测
       for (let i = activeBalls.length - 1; i >= 0; i--) {
         const b = activeBalls[i];
@@ -1589,6 +1637,7 @@ button:active { transform: scale(0.97); }
   // byChoice=true 表示玩家主动点了"结束"，否则是阵亡
   function gameOver(win, byChoice) {
     G.state = "over";
+    G.runToken++;   // 作废本局所有还在排队的 setTimeout（敌人回合 / 关卡结算）
     // 清掉可能还在飞的弹珠，别让物理在结算界面背后继续跑
     for (const b of activeBalls.slice()) World.remove(world, b);
     activeBalls = [];
@@ -1617,6 +1666,7 @@ button:active { transform: scale(0.97); }
   document.getElementById("btnEndRun").addEventListener("click", endRun);
 
   function newGame() {
+    G.runToken++;   // 重开也要换代号，防止上一局的残留回调串进来
     G.player = { hp: 50, maxHp: 50, block: 0, weak: 0 };
     G.gold = 15;
     G.relics = [];

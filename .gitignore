@@ -1,11 +1,14 @@
-# 代理工作目录（不是交付物）
+# 代理工作目录（非交付物）
 .workbuddy/
 
 # 系统 / 编辑器
 .DS_Store
 Thumbs.db
 *.swp
+.vscode/
+.idea/
 
-# 临时文件
+# 临时与日志文件
 *.tmp
+*.log
 __pycache__/

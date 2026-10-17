@@ -1,0 +1,78 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+  min-height: 100%;
+  background: radial-gradient(circle at 50% 0%, #233a2c, #0a0d18 62%);
+  color: #eef2ff;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  user-select: none; -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.wrap { max-width: 900px; margin: 0 auto; padding: 14px 12px 30px; display: flex; flex-direction: column; align-items: center; }
+
+.topbar { width: 100%; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.title { font-size: 22px; font-weight: 900; letter-spacing: 1px; color: #5bff9b; }
+.stats { display: flex; gap: 14px; font-size: 13px; color: #9aa6d6; }
+.stats b { color: #eef2ff; font-size: 16px; }
+
+#boardWrap { position: relative; margin-top: 14px; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+#board { display: grid; gap: 2px; background: #10131f; padding: 6px; border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.5); width: max-content; margin: 0 auto; }
+
+.cell {
+  width: 26px; height: 26px; border-radius: 4px; cursor: pointer;
+  background: linear-gradient(180deg, #3a4463, #2b3350);
+  color: #fff; font-size: 14px; font-weight: 800; line-height: 26px; text-align: center;
+  border: none; padding: 0; font-family: inherit;
+}
+.cell:active { transform: scale(.94); }
+.cell.shown { background: #1a2035; cursor: default; }
+.cell.flag { background: linear-gradient(180deg, #6b4a2a, #4d341c); }
+.cell.mine { background: linear-gradient(180deg, #ff6b6b, #b02a2a); }
+.cell.boom { background: #ff3b3b; }
+.cell.n1 { color: #7ecbff; } .cell.n2 { color: #5bff9b; } .cell.n3 { color: #ff8a5b; }
+.cell.n4 { color: #b18cff; } .cell.n5 { color: #ffd86b; } .cell.n6 { color: #6ee7ff; }
+.cell.n7 { color: #fff; }     .cell.n8 { color: #c7d0f5; }
+body.big #board .cell { width: 22px; height: 22px; font-size: 12px; line-height: 22px; }
+
+.overlay {
+  position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: rgba(10,11,26,.93); color: #eef2ff; text-align: center; padding: 20px 14px; z-index: 100;
+  overflow-y: auto;
+}
+.overlay.hidden { display: none !important; }
+.overlay h1 { font-size: 30px; margin-bottom: 8px; letter-spacing: 1px; color: #5bff9b; }
+.sub { color: #9aa6d6; margin-bottom: 14px; font-size: 14px; }
+.tip { color: #7e8bbf; font-size: 12px; margin: 3px 0; max-width: 440px; line-height: 1.6; }
+.diffs { display: flex; flex-direction: column; gap: 10px; margin: 10px 0 14px; width: 100%; max-width: 280px; }
+.diffs .diff {
+  margin-top: 0; width: 100%; padding: 12px 20px; font-size: 15px; font-weight: 800;
+  color: #12132a; background: linear-gradient(90deg, #5bff9b, #7ecbff); border: none; border-radius: 24px; cursor: pointer;
+  white-space: nowrap; box-shadow: 0 4px 14px rgba(91, 255, 155, 0.25);
+}
+.diffs .diff:active { transform: scale(.97); }
+button { margin-top: 14px; padding: 11px 26px; font-size: 16px; font-weight: 800; color: #12132a;
+  background: linear-gradient(90deg, #5bff9b, #7ecbff); border: none; border-radius: 24px; cursor: pointer; }
+button:active { transform: scale(.97); }
+.btns { display: flex; gap: 10px; }
+button.ghost { background: rgba(30,36,62,.9); color: #cdd6ff; border: 1px solid #333b63; font-size: 14px; padding: 9px 18px; }
+button.ghost:active { background: #2f6df0; color: #fff; }
+.ctrl { display: flex; gap: 10px; margin-top: 14px; }
+#resultStats { color: #c7d0f5; font-size: 15px; line-height: 1.8; }
+#resultStats b { color: #5bff9b; }
+
+/* 历史战绩 */
+.records { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 14px 0 0; }
+.records .rec {
+  background: rgba(24,26,50,.9); border: 1px solid #2e3558;
+  border-radius: 10px; padding: 6px 12px; min-width: 78px; text-align: center;
+}
+.records .rec .rk { font-size: 10px; color: #7e8bbf; font-weight: 700; }
+.records .rec .rv { font-size: 15px; font-weight: 900; color: #eef2ff; }
+.records .rec.best .rv { color: #5bff9b; }
+.records .empty { font-size: 12px; color: #7e8bbf; }
+
+.back-home {
+  display: inline-block; margin-top: 14px; font-size: 12px; color: #9aa6d6;
+  text-decoration: none; border-bottom: 1px dashed #4a5580; padding-bottom: 1px;
+}
+.back-home:hover { color: #eef2ff; }

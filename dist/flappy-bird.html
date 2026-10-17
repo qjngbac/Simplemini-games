@@ -160,15 +160,24 @@ h2 { font-size: 32px; margin-bottom: 8px; }
     gravity: 0.45,        // 每步下落加速度
     flap: -7.6,           // 拍翅冲量
     pipeW: 64,            // 管道宽
-    gap: 160,             // 上下管间隙
+    gap: 160,             // 上下管间隙（初始值）
+    gapMin: 132,          // 间隙下限
+    gapRamp: 1.6,         // 每得 1 分收窄的像素
     pipeSpacing: 220,     // 管道水平间距(像素)
-    speed: 2.2,           // 滚动速度 px/步
+    speed: 2.2,           // 滚动速度 px/步（初始值）
+    speedMax: 3.4,        // 速度上限
+    speedRamp: 0.04,      // 每得 1 分增加的速度
     groundH: 90,
     birdX: 96,
     birdR: 14,
     spawnX: W + 40,
     maxPipes: 6,          // 最大管道数量限制，防止内存泄漏
   };
+
+  // 难度曲线：分数越高管道越快、缺口越窄，但都有上限，避免后期变成"不可能"。
+  // 旧版本速度与缺口是写死的常量，玩到 30 分和 3 分手感完全一样。
+  function curSpeed() { return Math.min(CFG.speedMax, CFG.speed + score * CFG.speedRamp); }
+  function curGap() { return Math.max(CFG.gapMin, CFG.gap - score * CFG.gapRamp); }
 
   const STATE = { READY: "ready", PLAY: "play", OVER: "over" };
 
@@ -202,9 +211,12 @@ h2 { font-size: 32px; margin-bottom: 8px; }
 
   function spawnPipe(x) {
     const minTop = 60;
-    const maxTop = H - CFG.groundH - CFG.gap - 60;
+    const gap = curGap();
+    const maxTop = H - CFG.groundH - gap - 60;
     const top = minTop + Math.random() * (maxTop - minTop);
-    pipes.push({ x, top, scored: false });
+    // 缺口宽度在生成时固定下来：难度变化只影响新管道，
+    // 否则屏幕上的旧管道会随分数"越长越窄"，视觉和判定都会跳变。
+    pipes.push({ x, top, gap, scored: false });
   }
 
   // ---------- 输入 ----------
@@ -260,6 +272,7 @@ h2 { font-size: 32px; margin-bottom: 8px; }
   }
 
   function gameOver() {
+    if (state === STATE.OVER) return;   // 防止同一步内重复结算（战绩会被记两次）
     state = STATE.OVER;
     if (score > best) {
       best = score;
@@ -308,8 +321,9 @@ h2 { font-size: 32px; margin-bottom: 8px; }
       bird.rot = Math.max(-0.5, Math.min(1.4, bird.vy / 12));
 
       // 管道滚动与生成
+      const spd = curSpeed();
       for (const p of pipes) {
-        p.x -= CFG.speed;
+        p.x -= spd;
         if (!p.scored && p.x + CFG.pipeW < bird.x) {
           p.scored = true;
           score++;
@@ -326,6 +340,7 @@ h2 { font-size: 32px; margin-bottom: 8px; }
       if (bird.y + CFG.birdR >= H - CFG.groundH) {
         bird.y = H - CFG.groundH - CFG.birdR;
         gameOver();
+        return;   // 已经结束了就别再往下判定管道，否则同一步里会触发第二次 gameOver
       }
       if (bird.y - CFG.birdR <= 0) {
         bird.y = CFG.birdR;
@@ -342,7 +357,7 @@ h2 { font-size: 32px; margin-bottom: 8px; }
 
     // 地面滚动（ready/over 也滚，增加生气）
     if (state !== STATE.OVER) {
-      groundX = (groundX - CFG.speed) % 24;
+      groundX = (groundX - curSpeed()) % 24;
     }
   }
 
@@ -350,8 +365,9 @@ h2 { font-size: 32px; margin-bottom: 8px; }
     const bx = bird.x, by = bird.y, r = CFG.birdR;
     const inX = bx + r > p.x && bx - r < p.x + CFG.pipeW;
     if (!inX) return false;
+    const gap = p.gap || CFG.gap;   // 每根管子自己的缺口宽度
     const hitTop = by - r < p.top;
-    const hitBot = by + r > p.top + CFG.gap;
+    const hitBot = by + r > p.top + gap;
     return hitTop || hitBot;
   }
 
@@ -406,6 +422,7 @@ h2 { font-size: 32px; margin-bottom: 8px; }
 
   function drawPipe(p) {
     const x = p.x, w = CFG.pipeW;
+    const gap = p.gap || CFG.gap;   // 与 hitPipe 用同一个值，保证"看到的"就是"判定到的"
     const grad = ctx.createLinearGradient(x, 0, x + w, 0);
     grad.addColorStop(0, "#5aa02c");
     grad.addColorStop(0.5, "#8ed14f");
@@ -415,13 +432,13 @@ h2 { font-size: 32px; margin-bottom: 8px; }
     ctx.fillRect(x, 0, w, p.top);
     ctx.fillRect(x - 4, p.top - 22, w + 8, 22);
     // 下管
-    ctx.fillRect(x, p.top + CFG.gap, w, H - CFG.groundH - (p.top + CFG.gap));
-    ctx.fillRect(x - 4, p.top + CFG.gap, w + 8, 22);
+    ctx.fillRect(x, p.top + gap, w, H - CFG.groundH - (p.top + gap));
+    ctx.fillRect(x - 4, p.top + gap, w + 8, 22);
     // 描边
     ctx.strokeStyle = "rgba(0,0,0,.18)";
     ctx.lineWidth = 2;
     ctx.strokeRect(x, 0, w, p.top);
-    ctx.strokeRect(x, p.top + CFG.gap, w, H - CFG.groundH - (p.top + CFG.gap));
+    ctx.strokeRect(x, p.top + gap, w, H - CFG.groundH - (p.top + gap));
   }
 
   function drawGround() {

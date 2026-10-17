@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>俄罗斯方块 Tetris</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="wrap">
+  <header class="topbar">
+    <div class="title">俄罗斯方块</div>
+    <div class="stats">
+      <span>分数 <b id="score">0</b></span>
+      <span>等级 <b id="level">1</b></span>
+      <span>消行 <b id="lines">0</b></span>
+      <button id="pauseBtn" class="pause-btn" title="暂停/继续 (P)">⏸</button>
+    </div>
+  </header>
+
+  <div class="stage">
+    <canvas id="game"></canvas>
+    <div id="side">
+      <div class="panel">
+        <div class="panel-title">暂存 (C)</div>
+        <canvas id="hold"></canvas>
+      </div>
+      <div class="panel">
+        <div class="panel-title">下一个</div>
+        <canvas id="next"></canvas>
+      </div>
+      <div class="panel keys-hint">
+        <div class="panel-title">操作</div>
+        <p>← → 移动</p>
+        <p>↑ / X 顺时针旋转</p>
+        <p>Z 逆时针旋转</p>
+        <p>↓ 加速下落</p>
+        <p>空格 瞬间落地</p>
+        <p>C / Shift 暂存方块</p>
+        <p>P / Esc 暂停</p>
+        <p>手机：下方按钮</p>
+      </div>
+    </div>
+
+    <!-- 触屏按钮（桌面端靠键盘，这里也不隐藏，方便鼠标点） -->
+    <div id="pad" class="pad">
+      <button class="pad-btn" data-act="left">◀</button>
+      <button class="pad-btn" data-act="rotate">⟳</button>
+      <button class="pad-btn" data-act="right">▶</button>
+      <button class="pad-btn" data-act="down">▼</button>
+      <button class="pad-btn" data-act="drop">⤓</button>
+      <button class="pad-btn" data-act="hold">⇋</button>
+      <button class="pad-btn" data-act="pause" title="暂停/继续">⏸</button>
+    </div>
+
+    <!-- 菜单 -->
+    <div id="menu" class="overlay">
+      <h1>俄罗斯方块</h1>
+      <p class="sub">消行得分，等级越高落得越快</p>
+      <p class="tip">键盘：← → 移动 · ↑/X 旋转 · 空格 落地 · C 暂存 · P 暂停</p>
+      <p class="tip">手机：下方按钮 · 也可以左右滑动屏幕</p>
+      <div id="tetrisRecords" class="records"></div>
+      <button id="startBtn">开始游戏</button>
+      <a class="back-home" href="../index.html">← 返回游戏列表</a>
+    </div>
+
+    <!-- 暂停 -->
+    <div id="pause" class="overlay hidden">
+      <h1>已暂停</h1>
+      <div id="pauseStats" class="sub"></div>
+      <button id="resumeBtn">继续</button>
+      <a class="back-home" href="../index.html">← 返回游戏列表</a>
+    </div>
+
+    <!-- 结束 -->
+    <div id="gameover" class="overlay hidden">
+      <h1>游戏结束</h1>
+      <div id="goStats"></div>
+      <div id="tetrisRecordsOver" class="records"></div>
+      <button id="retryBtn">再来一局</button>
+      <a class="back-home" href="../index.html">← 返回游戏列表</a>
+    </div>
+  </div>
+  <a class="back-home" href="../index.html">← 返回游戏列表</a>
+</div>
+<script src="game.js"></script>
+</body>
+</html>

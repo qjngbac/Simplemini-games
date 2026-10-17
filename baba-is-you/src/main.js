@@ -30,18 +30,22 @@
   let levelIndex = 0;
   let state = null;
   let history = [];
+  let steps = 0;      // 本关有效步数（只统计真正改变了盘面的操作）
 
   function loadLevel(i) {
     levelIndex = (i + LEVELS.length) % LEVELS.length;
     state = BIY.loadLevel(LEVELS[levelIndex]);
     history = [];
+    steps = 0;
     hideOverlay();
     updateHUD();
   }
   function restart() { loadLevel(levelIndex); }
   function undo() {
     if (history.length === 0) return;
-    state = history.pop();
+    const snap = history.pop();
+    steps = snap.steps || 0;   // 步数跟着历史一起回退
+    state = snap;
     BIY.computeRules(state);
     hideOverlay();
     updateHUD();
@@ -69,7 +73,12 @@
       span.textContent = r;
       elRules.appendChild(span);
     }
-    elStatus.textContent = state.status === "playing" ? "" : state.status;
+    // 步数 / 本关历史最好步数。bestSteps 之前只在通关记录里默默存着，
+    // 游玩过程中完全看不到自己走了几步、离最好成绩差多少。
+    const best = (loadRec().bestSteps || {})[levelIndex + 1];
+    elStatus.textContent =
+      (state.status === "playing" ? "" : state.status + " · ") +
+      "步数 " + steps + (best ? " ｜ 最少 " + best : "");
   }
 
   function showOverlay(title, msg, canNext) {
@@ -83,17 +92,27 @@
   // 玩家移动
   function move(dir) {
     if (!state || state.status !== "playing") return;
-    history.push(BIY.cloneState(state));
-    if (history.length > 300) history.shift();
+    // 先照一张"移动前"的快照，再执行移动；只有盘面真的变了才算一步。
+    // 旧写法每次按键都 push 一条历史、也算一步，于是"撞墙"这种无效操作会
+    // 把关卡选择里记录的最少步数灌水，撤销也会被白白浪费一次。
+    const before = BIY.serialize(state);
+    const snapshot = BIY.cloneState(state);
+    snapshot.steps = steps;
     BIY.applyInput(state, dir);
+    if (BIY.serialize(state) !== before) {
+      steps++;
+      history.push(snapshot);
+      if (history.length > 300) history.shift();
+    }
     updateHUD();
     if (state.status === "won") {
-      recordClear(levelIndex + 1, history.length);   // history.length 即本关步数
+      recordClear(levelIndex + 1, steps);
       markClearedButtons();
       const last = levelIndex === LEVELS.length - 1;
       showOverlay(
         "🎉 过关！",
-        last ? "这是最后一关。按 N 查看通关画面，R 重玩。" : "按 → / N 进入下一关，R 重玩，Z 撤销。",
+        "本关用了 " + steps + " 步。" +
+          (last ? "这是最后一关，按 N 查看通关画面，R 重玩。" : "按 → / N 进入下一关，R 重玩，Z 撤销。"),
         !last
       );
     } else if (state.status === "lost") {

@@ -121,11 +121,11 @@
         status = "won";
         bounceRow(curRow);
         recordResult(true, curRow + 1);
-        flashMsg("漂亮！猜对了");
+        flashMsg(`漂亮！第 ${curRow + 1} 次猜中 ｜ 点按棋盘开始新一局`, true);
       } else if (curRow >= ROWS - 1) {
         status = "lost";
         recordResult(false);
-        flashMsg("答案是 " + answer.toUpperCase());
+        flashMsg(`答案是 ${answer.toUpperCase()} ｜ 点按棋盘开始新一局`, true);
       } else {
         curRow++; curCol = 0;
       }
@@ -183,7 +183,10 @@
   }
 
   // ---- 动画 ----
+  // 翻牌节奏从 250ms/格 提到 170ms/格：一整行由约 1.3 秒缩到约 0.9 秒，
+  // 减少"翻牌期间输入被锁、只能干等"的空档
   function animateReveal(row, guess, result, done) {
+    const STEP = 170;
     for (let i = 0; i < COLS; i++) {
       const cell = cellAt(row, i);
       setTimeout(() => {
@@ -191,9 +194,9 @@
         setTimeout(() => {
           cell.classList.remove("filled");
           cell.classList.add(result[i]);
-        }, 250);
-        if (i === COLS - 1) setTimeout(done, 280);
-      }, i * 250);
+        }, 170);
+        if (i === COLS - 1) setTimeout(done, 200);
+      }, i * STEP);
     }
   }
   function shakeRow(r) {
@@ -208,13 +211,16 @@
 
   // ---- 提示 ----
   let msgTimer;
-  function flashMsg(t) {
+  // sticky 提示：不自动消失，一直显示到下一局开始。
+  // 用于"答案是 XXX"这类必须让玩家看清的信息——旧写法 2.2 秒自动淡出，
+  // 而那行 DOM 上的点击又是"立刻重开"，玩家常常一眼都没看到答案。
+  function flashMsg(t, sticky) {
     msgEl.innerHTML = "<span>" + t + "</span>";
     msgEl.classList.add("show");
     clearTimeout(msgTimer);
-    msgTimer = setTimeout(hideMsg, 2200);
+    if (!sticky) msgTimer = setTimeout(hideMsg, 2200);
   }
-  function hideMsg() { msgEl.classList.remove("show"); msgEl.innerHTML = ""; }
+  function hideMsg() { clearTimeout(msgTimer); msgEl.classList.remove("show"); msgEl.innerHTML = ""; }
 
   function cellAt(r, c) {
     // 使用缓存的DOM元素，避免每次都进行DOM查询

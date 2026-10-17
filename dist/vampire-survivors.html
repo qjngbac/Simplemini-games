@@ -324,10 +324,18 @@ button:active { transform: scale(0.97); }
     });
   }
 
-  function updateWeapons(dt, t) {
+  function updateWeapons(dt) {
     for (const w of weapons) {
+      // w.acc = 距离上次判定过去了多久。
+      // 光环 / 法球是"按秒结算"的持续伤害：伤害必须乘以真实时间窗。
+      // 旧写法直接用当前帧的 dt（一帧才 0.016s），于是 14 伤害/秒的灼烧光环
+      // 实际只有约 0.9 点/秒、18 伤害/秒的法球只有约 6 点/秒 —— 升了级也看不出变化。
+      w.acc = (w.acc || 0) + dt;
       w.t -= dt;
       if (w.t > 0) continue;
+      const el = Math.min(w.acc, 0.5);   // 封顶，避免掉帧后一次性爆出巨额伤害
+      w.acc = 0;
+
       if (w.type === "missile") {
         // 选最近的 count 个敌人
         // 索敌要的是"全局最近"，用空间网格其实没有意义：半径 9999 会让
@@ -345,16 +353,16 @@ button:active { transform: scale(0.97); }
         }
         w.t = w.interval;
       } else if (w.type === "aura") {
-        // 范围脉冲
+        // 范围脉冲：伤害 = 每秒伤害 × 实际过去的时间
         const hit = [];
         queryNear(enemies, player.x, player.y, w.radius, hit);
         for (const e of hit) {
           const d = Math.hypot(e.x - player.x, e.y - player.y);
-          if (d < w.radius + e.r) damageEnemy(e, w.dmg * player.dmgMul * dt, 0);
+          if (d < w.radius + e.r) damageEnemy(e, w.dmg * player.dmgMul * el);
         }
         w.t = w.interval;
       } else if (w.type === "orbit") {
-        // 环绕法球（持续接触伤害）
+        // 环绕法球（持续接触伤害），同样按真实时间窗结算
         for (const o of w.orbs) {
           o.ang += w.spin * dt;
           const ox = player.x + Math.cos(o.ang) * w.radius;
@@ -362,7 +370,7 @@ button:active { transform: scale(0.97); }
           const hit = [];
           queryNear(enemies, ox, oy, 26, hit);
           for (const e of hit) {
-            if (dist2(e.x, e.y, ox, oy) < (e.r + 14) * (e.r + 14)) damageEnemy(e, w.dmg * player.dmgMul * dt, 0);
+            if (dist2(e.x, e.y, ox, oy) < (e.r + 14) * (e.r + 14)) damageEnemy(e, w.dmg * player.dmgMul * el);
           }
         }
         w.t = 0.05;
@@ -371,7 +379,7 @@ button:active { transform: scale(0.97); }
   }
 
   // ---------- 伤害 / 死亡 ----------
-  function damageEnemy(e, dmg, knock) {
+  function damageEnemy(e, dmg) {
     if (e.dead) return;
     e.hp -= dmg; e.flash = 0.08;
     if (e.hp <= 0) killEnemy(e);
@@ -387,18 +395,23 @@ button:active { transform: scale(0.97); }
     { id: "missile_new", ico: "🏹", name: "魔法飞弹", desc: "新增/强化：自动射向最近的敌人",
       avail: () => !weapons.find(w => w.type === "missile"),
       apply: () => { const w = weapons.find(w => w.type === "missile"); if (w) { w.level++; w.count++; w.dmg += 4; } else addWeapon({ type:"missile", name:"魔法飞弹", level:1, t:0, interval:0.9, count:1, dmg:9, speed:430, color:"#ffd86b" }); } },
-    { id: "aura_new", ico: "🔥", name: "灼烧光环", desc: "身边持续灼烧靠近的敌人",
+    { id: "aura_new", ico: "🔥", name: "灼烧光环", desc: "身边持续灼烧靠近的敌人（按秒结算）",
       avail: () => !weapons.find(w => w.type === "aura"),
+      // dmg 的语义是"每秒伤害"，实际扣血 = dmg × 距上次判定的真实时间（见 updateWeapons）
       apply: () => { const w = weapons.find(w => w.type === "aura"); if (w) { w.level++; w.radius += 18; w.dmg += 6; } else addWeapon({ type:"aura", name:"灼烧光环", level:1, t:0, interval:0.25, radius:80, dmg:14 }); } },
     { id: "orbit_new", ico: "🪐", name: "环绕法球", desc: "围绕你旋转、触碰即伤的护体法球",
       avail: () => !weapons.find(w => w.type === "orbit"),
       apply: () => {
         const w = weapons.find(w => w.type === "orbit");
-        if (w) { w.level++; w.count++; w.orbs.push({ ang: rand(0, 6.28) }); w.dmg += 5; }
-        else { const orbs = [{ ang: 0 }, { ang: Math.PI }]; addWeapon({ type:"orbit", name:"环绕法球", level:1, t:0, interval:0.05, radius:70, dmg:18, spin:2.4, count:2, orbs }); }
+        if (w) { w.level++; w.count++; w.orbs.push({ ang: rand(0, 6.28) }); w.dmg += 3; }
+        // dmg 的语义是"每颗法球每秒伤害"：2 颗起步 = 24/s，靠 +1 颗/级 成长
+        else { const orbs = [{ ang: 0 }, { ang: Math.PI }]; addWeapon({ type:"orbit", name:"环绕法球", level:1, t:0, interval:0.05, radius:70, dmg:12, spin:2.4, count:2, orbs }); }
       } },
     { id: "dmg", ico: "💥", name: "锋利", desc: "所有武器伤害 +25%", avail: () => true, apply: () => { player.dmgMul *= 1.25; } },
-    { id: "rate", ico: "⚡", name: "急速", desc: "飞弹/光环攻击频率 +18%", avail: () => true, apply: () => { for (const w of weapons) if (w.type !== "orbit") w.interval *= 0.82; } },
+    { id: "rate", ico: "⚡", name: "急速", desc: "全部武器输出 +18%", avail: () => true,
+      // 飞弹是"打一发算一发"，缩短间隔就是提输出；光环/法球是按秒结算的持续伤害，
+      // 缩短间隔只会改变判定次数、不改总输出，所以对它们直接抬升每秒伤害。
+      apply: () => { for (const w of weapons) { if (w.type === "missile") w.interval *= 0.82; else w.dmg *= 1.18; } } },
     { id: "hp", ico: "❤️", name: "强壮", desc: "最大生命 +30 并回满该值", avail: () => true, apply: () => { player.maxHp += 30; player.hp = Math.min(player.maxHp, player.hp + 30); } },
     { id: "speed", ico: "👟", name: "疾行", desc: "移动速度 +12%", avail: () => true, apply: () => { player.speed *= 1.12; } },
     { id: "magnet", ico: "🧲", name: "拾取", desc: "经验拾取范围 +35%", avail: () => true, apply: () => { player.pickup *= 1.35; } },
@@ -486,7 +499,7 @@ button:active { transform: scale(0.97); }
     }
 
     // 武器
-    updateWeapons(dt, t);
+    updateWeapons(dt);
 
     // 弹丸移动 + 命中
     for (let i = projectiles.length - 1; i >= 0; i--) {
@@ -500,7 +513,7 @@ button:active { transform: scale(0.97); }
         queryNear(enemies, p.x, p.y, p.r + 18, cand);
         for (const e of cand) {
           const rr = e.r + p.r;
-          if (dist2(e.x, e.y, p.x, p.y) < rr * rr) { damageEnemy(e, p.dmg, 1); hit = true; break; }
+          if (dist2(e.x, e.y, p.x, p.y) < rr * rr) { damageEnemy(e, p.dmg); hit = true; break; }
         }
       }
       if (hit || p.life <= 0) { projectiles.splice(i, 1); projPool.release(p); }

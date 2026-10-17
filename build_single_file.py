@@ -14,9 +14,15 @@ import io
 import os
 import re
 import sys
+import zipfile
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DIST = os.path.join(ROOT, "dist")
+
+# 发布用的压缩包：把 dist/ 的成品按 "<目录名>/xxx.html" 打进去，
+# 解压后是一个文件夹，双击里面的 index.html 就能玩
+ZIP_NAME = "Simplemini-games-v1.0.0.zip"
+ZIP_DIR = "Simplemini-games"
 
 # 打包顺序：首页（大厅）在前，其余按游戏
 PAGES = [
@@ -28,6 +34,12 @@ PAGES = [
     ("flappy-bird", "flappy-bird.html", "flappy-bird"),
     ("wordle", "wordle.html", "wordle"),
     ("baba-is-you", "baba-is-you.html", "baba-is-you"),
+    # 第二批：经典休闲
+    ("tetris", "tetris.html", "tetris"),
+    ("snake", "snake.html", "snake"),
+    ("game-2048", "game-2048.html", "game-2048"),
+    ("minesweeper", "minesweeper.html", "minesweeper"),
+    ("gomoku", "gomoku.html", "gomoku"),
 ]
 
 SAFE_STORAGE = """<script>
@@ -119,7 +131,32 @@ def bundle(html_path, out_name, game_dir):
     return out, len(html), leftover
 
 
+def make_zip():
+    """把 dist/ 成品打成发布用压缩包（--zip 时调用）。"""
+    out = os.path.join(ROOT, ZIP_NAME)
+    if os.path.exists(out):
+        os.remove(out)
+    n = 0
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        # 按 PAGES 的顺序打包，index.html 排在最前
+        for _src, out_name, _game_dir in PAGES:
+            p = os.path.join(DIST, out_name)
+            if not os.path.exists(p):
+                sys.stderr.write("  ! 缺少成品，跳过: %s\n" % out_name)
+                continue
+            z.write(p, ZIP_DIR + "/" + out_name)
+            n += 1
+    print("\n压缩包: %s（%d 个文件，%.1f KB）" % (ZIP_NAME, n, os.path.getsize(out) / 1024.0))
+    return n
+
+
 def main():
+    if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     if not os.path.isdir(DIST):
         os.makedirs(DIST)
     print("输出目录: %s\n" % DIST)
@@ -131,15 +168,25 @@ def main():
         else:
             html_path = os.path.join(ROOT, game_dir, "index.html")
         if not os.path.exists(html_path):
-            print("  ✗ 跳过（不存在）: %s" % html_path)
+            print("  [X] 跳过（不存在）: %s" % html_path)
             bad += 1
             continue
         out, size, leftover = bundle(html_path, out_name, game_dir)
         total += 1
         if leftover:
             bad += 1
-        print("  %s %-26s %8.1f KB" % ("✓" if not leftover else "✗", out_name, size / 1024.0))
-    print("\n打包 %d 个页面，%s" % (total, "全部干净 ✅" if bad == 0 else "有 %d 个问题 ❌" % bad))
+        tag = "[OK]" if not leftover else "[X]"
+        try:
+            print("  %s %-26s %8.1f KB" % ("✓" if not leftover else "✗", out_name, size / 1024.0))
+        except UnicodeEncodeError:
+            print("  %s %-26s %8.1f KB" % (tag, out_name, size / 1024.0))
+    try:
+        print("\n打包 %d 个页面，%s" % (total, "全部干净 ✅" if bad == 0 else "有 %d 个问题 ❌" % bad))
+    except UnicodeEncodeError:
+        print("\n打包 %d 个页面，%s" % (total, "全部干净 [OK]" if bad == 0 else "有 %d 个问题 [X]" % bad))
+    # 加 --zip 才顺带打发布包：平时只想看 dist 时不该被压缩包拖慢
+    if "--zip" in sys.argv:
+        make_zip()
     return 0 if bad == 0 else 1
 
 

@@ -91,8 +91,10 @@ header h1 {
 .cell.present { background: var(--yellow); border-color: var(--yellow); color: #fff; }
 .cell.absent  { background: var(--gray);  border-color: var(--gray);  color: #fff; }
 
-/* flip animation */
-.cell.flip { animation: flip .5s ease; }
+/* flip animation
+   时长与 game.js 的翻牌节奏对齐：JS 在 170ms（= 动画正中）翻出颜色，
+   所以动画本身取 0.34s，整行约 0.88s 翻完（原来 0.5s × 5 格 ≈ 1.3s） */
+.cell.flip { animation: flip .34s ease; }
 @keyframes flip {
   0% { transform: rotateX(0); }
   50% { transform: rotateX(90deg); }
